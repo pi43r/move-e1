@@ -15,7 +15,7 @@ jobs:
       - name: Check version
         run: |
           V="${GITHUB_REF_NAME#v}"
-          for f in src/e1/module.json src/e1_lite/module.json; do
+          for f in src/e1/module.json; do
             grep -q "\"version\": \"$V\"" "$f" || { echo "$f is not at version $V"; exit 1; }
           done
       - run: make test
@@ -28,7 +28,6 @@ jobs:
         with:
           files: |
             dist/e1-module.tar.gz
-            dist/e1_lite-module.tar.gz
       - name: Update release.json on main
         run: |
           V="${GITHUB_REF_NAME#v}"
@@ -37,8 +36,7 @@ jobs:
           cat > release.json <<JSON
           {
             "modules": {
-              "e1": { "version": "$V", "download_url": "$BASE/e1-module.tar.gz" },
-              "e1_lite": { "version": "$V", "download_url": "$BASE/e1_lite-module.tar.gz" }
+              "e1": { "version": "$V", "download_url": "$BASE/e1-module.tar.gz" }
             }
           }
           JSON

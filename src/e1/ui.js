@@ -2,31 +2,20 @@
  * E-1 — overtake UI for Ableton Move (Schwung).
  *
  * All sequencing lives in dsp.so. This file reads one compact snapshot from
- * the DSP per frame, draws it with Schwung's movy-style param pages, lights
- * the pads, turns presses into edits and perform moves, and saves the
- * project and patterns to /data/UserData/schwung/e1/.
+ * the DSP per frame, draws it, lights the pads, turns presses into edits,
+ * and keeps sets, patterns and the live state on disk.
  *
- * Surface (the guide has the full map):
- *   Top 16 pads      tracks 1-16. Tap = select, hold = target for knobs,
- *                    +/- and perform pads. Shift+tap = mute.
- *   Lower 16 pads    the view on the four track buttons:
- *                    1 Values, 2 Perform, 3 Mutes, 4 Patterns
- *   Step row         the selected track's steps. Tap = add/remove a hit,
- *                    Shift+tap = set Steps, Loop+tap = freeze that many steps
- *   Knobs 1-8        the current page. Shift = all tracks of that type
- *   Jog              page (a banner names it). Click = back to Rhythm.
- *                    Shift+jog = tempo
- *   +/-              pulses; Shift = steps
- *   Left/Right       step pages 17-64; Shift = rotate
- *   Sample (hold)    Temp: edits made while held are undone on release.
- *                    Capture while holding keeps them.
- *   Capture          save the current state to the next empty pattern
- *   Loop (hold)      freeze the last 4 steps
- *   Copy + 2 pads    copy a track (or a pattern in Patterns view)
- *   Delete + pad     clear a track's rhythm, a step edit, or a pattern
- *   Undo             step back through edits
- *   Play             start/stop per Clock mode; Shift+Play = next Clock mode
- *   Menu             settings page; Shift+Menu = next Destination
+ * The surface has one home and no pad pages:
+ *   Top 16 pads      tracks. Tap = select, hold = aim knobs and moves at it.
+ *   Step row         the selected track's pulses, for the cycle shown.
+ *   Bottom 16 pads   whatever the knob under your finger needs: divisions,
+ *                    a keyboard for Pitch, cycles for Cycles, styles...
+ *   Knobs 1-8        the page; Shift = each knob's second function.
+ *   Left buttons     hold (or tap to latch): Pattern, Cycles, Temp, Perform.
+ *   Mute             hold + track pads, applied together on release.
+ *   Sample           hold + turn a knob = how much that knob's value wanders.
+ *   Jog              page; click = home. Shift+jog = tempo.
+ *   Menu             sets, pattern names, track presets, settings.
  *
  * Inspired by the Torso T-1. Not affiliated with Torso Electronics.
  */
@@ -34,57 +23,73 @@
 import { renderPageMovy } from "/data/UserData/schwung/shared/param_pages/render_page_movy.mjs";
 import { PAGE_KNOBS } from "/data/UserData/schwung/shared/param_pages/page_plan.mjs";
 import { buildMetaIndex } from "/data/UserData/schwung/shared/param_pages/param_meta.mjs";
-import { fontPrint, fontWidth } from "/data/UserData/schwung/shared/param_pages/font_tamzen6x12.mjs";
 import { decodeDelta } from "/data/UserData/schwung/shared/input_filter.mjs";
 import {
-    MENU_PAGE, PERFORM, VIEWS, TRACK_NAMES, valuesFrom, choicesFor, metaFor, ledFrame, pageOptions,
-    drawBanner, currentPages, pageIndex, padToTrack, padToSlot, STEP_BASE, CLOCKS, DESTS, COL,
+    openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry,
+} from "/data/UserData/schwung/shared/text_entry.mjs";
+import {
+    PERFORM, CLOCKS, DESTS, COL, STEP_BASE, GLOBAL_KEYS,
+    valuesFrom, metaFor, ledFrame, pageOptions, drawPatternGrid, currentPages, pageIndex, knobKeys,
+    padModel, padMode, padPages, padToTrack, padToSlot, trackName,
 } from "./e1_view.mjs";
+import { createLibrary, createMenu } from "./e1_library.mjs";
 
-const LIB = { PAGE_KNOBS, buildMetaIndex, bigPrint: fontPrint, bigWidth: fontWidth };
+const LIB = { PAGE_KNOBS, buildMetaIndex };
 
 const CC = {
     jogTurn: 14, jogClick: 3, shift: 49, menu: 50, back: 51, capture: 52,
     down: 54, up: 55, undo: 56, loop: 58, copy: 60, left: 62, right: 63,
     play: 85, rec: 86, mute: 88, sample: 118, del: 119,
-    trackTop: 43, trackBottom: 40, knob0: 71,
+    lPattern: 43, lCycles: 42, lTemp: 41, lPerform: 40, knob0: 71,
 };
+const LAYER_OF = { [CC.lPattern]: "pattern", [CC.lCycles]: "cycles", [CC.lPerform]: "perform" };
 
 const SAVE_DIR = "/data/UserData/schwung/e1";
-const SAVE_FILE = SAVE_DIR + "/project.txt";
-const PAT_FILE = SAVE_DIR + "/patterns.json";
+const LIVE_FILE = SAVE_DIR + "/live.txt";
+const SESSION_FILE = SAVE_DIR + "/session.json";
 const LED_BUDGET = 20;          /* LED packets per tick; the out buffer holds ~64 */
-const BANNER_MS = 750;
+const TOAST_MS = 900;
+const TAP_MS = 300;             /* a shorter press of a left button latches it */
 const UNDO_DEPTH = 24;
 const GESTURE_MS = 1200;        /* edits closer than this share one undo step */
-const IDENTITY = new Set(["type", "channel", "output", "notemode", "note", "mute"]);
-const VIEW_COL = [COL.blue, COL.orange, COL.yellow, COL.green];
+const IDENTITY = new Set(["name", "type", "channel", "output", "mute"]);
 
 const st = {
-    focus: 0, pageName: "Rhythm", menu: false, view: 0, stepPage: 0, touched: -1, valuesKey: "steps",
-    shift: false, muteHeld: false, copyHeld: false, delHeld: false, loopHeld: false, sampleHeld: false,
+    focus: 0, pageName: "Shape", settings: false, stepPage: 0, touched: -1,
+    padKey: "steps", padPage: 0, kbOct: 3,
+    shift: false, muteHeld: false, mutePend: 0, copyHeld: false, delHeld: false, loopHeld: false,
+    randomHeld: false, tempHeld: false, keepTemp: false,
+    layer: null, layerHeld: null, layerLock: null,
     held: new Set(), snap: null, values: {}, warn: null, now: 0,
-    flashUntil: new Array(16).fill(0), banner: null,
+    flashUntil: new Array(16).fill(0), toast: null,
     perfHeld: new Array(16).fill(false), latched: new Array(16).fill(false), perfMask: new Array(16).fill(0),
-    soloMask: 0, patterns: new Array(16).fill(null), current: -1, queued: -1,
-    copySrc: -1, copyPat: -1, keepTemp: false,
+    soloMask: 0,
+    patterns: new Array(16).fill(null), current: -1, queued: -1,
+    setId: null, setName: "Set 1", dirty: false,
+    copySrc: -1, copyPat: -1, copyCyc: -1,
 };
 let pkeys = [];
 let dirty = true;
 let lastSnapStr = "";
 let editsSinceSave = 0, idleTicks = 0, saveQueue = [], saveParts = [];
+let sessionDirty = false;
 let ledHave = {};
 let knobAcc = [0, 0, 0, 0, 0, 0, 0, 0];
 let undo = [], lastEditAt = -1e9;
-let bannerShown = false;
+let toastShown = false;
 let loopMask = 0xFFFF;
+let layerPressAt = 0, layerPadUsed = false, layerSkipLock = false;
+let audNotes = {};              /* pad slot -> note being auditioned */
+let cycPadsDown = new Set();
+let wasTyping = false;
+let lib = null, menu = null;
 
 /* ------------------------------------------------------------ DSP I/O */
 
 function setP(k, v) { if (typeof host_module_set_param === "function") host_module_set_param(k, String(v)); }
 function getP(k) { return typeof host_module_get_param === "function" ? host_module_get_param(k) : null; }
 
-function edited() { editsSinceSave++; idleTicks = 0; dirty = true; }
+function edited() { editsSinceSave++; idleTicks = 0; dirty = true; if (!st.dirty) { st.dirty = true; sessionDirty = true; } }
 
 function poll() {
     const s = getP("ui");
@@ -97,13 +102,13 @@ function poll() {
     const fl = snap.fl | 0;
     if (fl) for (let t = 0; t < 16; t++) if ((fl >> t) & 1) st.flashUntil[t] = st.now + 90;
     if (st.queued >= 0 && !(snap.q | 0)) {          /* the queued pattern landed */
-        st.current = st.queued; st.queued = -1; edited();
+        st.current = st.queued; st.queued = -1; sessionDirty = true; edited();
     }
     dirty = true;
 }
 
-function banner(text, sub, dots) {
-    st.banner = { text, sub: sub || "", until: st.now + BANNER_MS, dots: dots || null };
+function toast(tag, text) {
+    st.toast = { tag: String(tag).toUpperCase(), text: String(text || "").toUpperCase(), until: st.now + TOAST_MS };
     dirty = true;
 }
 
@@ -111,13 +116,14 @@ function banner(text, sub, dots) {
 
 function isCC(t) { return st.snap ? ((st.snap.ty >> t) & 1) === 1 : t >= 11; }
 function pages() { return currentPages(st); }
-function currentPage() { const p = pages(); return st.menu ? MENU_PAGE : p[pageIndex(p, st.pageName)]; }
 function rel(d) { return d >= 0 ? "d+" + d : "d" + d; }
 function hex(m) { return (m >>> 0).toString(16); }
-function tname(t) { return "T" + (t + 1) + " " + TRACK_NAMES[t]; }
+function tname(t) { return "T" + (t + 1) + " " + trackName(st, t); }
+function refreshLayer() { st.layer = st.layerHeld || st.layerLock; dirty = true; }
 
 function setFocus(t) {
     if (t === st.focus) return;
+    if (st.snap && (st.snap.em | 0)) setP("t" + (st.focus + 1) + ":edit", "0");   /* leave cycle edit behind */
     st.focus = t;
     st.stepPage = 0;
     knobAcc.fill(0);
@@ -129,11 +135,12 @@ function setFocus(t) {
 function targets() { return st.held.size > 0 ? [...st.held] : [st.focus]; }
 function heldMask() { let m = 0; for (const t of st.held) m |= 1 << t; return m; }
 function maskLabel(m) {
-    if ((m & 0xFFFF) === 0xFFFF) return "ALL TRACKS";
+    if ((m & 0xFFFF) === 0xFFFF) return "ALL";
     const ts = []; for (let t = 0; t < 16; t++) if ((m >> t) & 1) ts.push(t);
     if (ts.length === 1) return tname(ts[0]);
     return ts.length <= 4 ? ts.map((t) => "T" + (t + 1)).join(" ") : ts.length + " TRACKS";
 }
+function who() { return st.held.size > 1 ? maskLabel(heldMask()) : ""; }
 
 function dumpAll() {
     const out = [];
@@ -165,9 +172,16 @@ function parseDump(text) {
 }
 function joinDump(m) { let s = ""; for (const [k, v] of m) s += k + "=" + v + "\n"; return s; }
 
-/* ------------------------------------------------------------ edits */
+/* Put one track's saved settings onto another, keeping who it plays. */
+function graft(fromText, dst) {
+    const from = parseDump(fromText);
+    const to = parseDump(getP("dump:" + (dst + 1)));
+    for (const k of IDENTITY) { if (to.has(k)) from.set(k, to.get(k)); else from.delete(k); }
+    setP("stage:" + (dst + 1), joinDump(from));
+    setP("commit", "now");
+}
 
-const GLOBAL_KEYS = new Set(["dest", "clock", "bpm", "clockout"]);
+/* ------------------------------------------------------------ edits */
 
 function setGlobal(key, value) {
     if (key === "dest") {
@@ -183,115 +197,110 @@ function setGlobal(key, value) {
     edited();
 }
 
+function setTrack(key, value) {
+    checkpoint();
+    for (const t of targets()) setP("t" + (t + 1) + ":" + key, value);
+    edited();
+}
+
+function baseKey(key) { return key && key.slice(0, 2) === "r." ? key.slice(2) : key; }
+
+function showPadsFor(key) {
+    const k = baseKey(key);
+    if (!k || k === st.padKey) return;
+    st.padKey = k;
+    st.padPage = 0;
+    dirty = true;
+}
+
 function turnKnob(i, delta) {
-    const key = currentPage().keys[i];
+    const key = knobKeys(st)[i];
     if (!key || delta === 0) return;
     const m = metaFor(key);
-    const laneNum = st.shift && /^cc\d+$/.test(key);
+    if (!m) return;
     /* Detents per value: small ranges move slowly so a value is easy to hit. */
-    const div = laneNum ? 3 : (m && m.div) || 1;
+    const div = m.div || 1;
     if (knobAcc[i] !== 0 && Math.sign(knobAcc[i]) !== Math.sign(delta)) knobAcc[i] = 0;
     knobAcc[i] += delta;
     const n = Math.trunc(knobAcc[i] / div);
     if (n === 0) return;
     knobAcc[i] -= n * div;
-    delta = n;
-    st.valuesKey = key;
+    showPadsFor(key);
 
     if (GLOBAL_KEYS.has(key)) {
-        if (key === "bpm") { setP("bpm", rel(delta)); edited(); return; }
+        if (key === "bpm" || key === "quant") { setP(key, rel(n)); edited(); return; }
         const opts = m.options;
         const cur = Math.max(0, opts.indexOf(st.values[key]));
-        setGlobal(key, opts[Math.max(0, Math.min(opts.length - 1, cur + delta))]);
+        setGlobal(key, opts[Math.max(0, Math.min(opts.length - 1, cur + n))]);
         return;
     }
-    checkpoint();
-    let tks = targets();
-    let k = key;
-    if (st.shift) {
-        if (laneNum) k = "ccn" + key.slice(2);
-        else tks = Array.from({ length: 16 }, (_, t) => t).filter((t) => isCC(t) === isCC(st.focus));
-    }
-    for (const t of tks) setP("t" + (t + 1) + ":" + k, rel(delta));
-    if (key === "type") {
-        /* Type changes the page set; stay on Setup, where Type lives. */
-        st.pageName = "Setup";
-        banner(delta > 0 ? "CC TRACK" : "NOTE TRACK", tname(st.focus));
-    }
-    edited();
-}
-
-function pickValue(slot) {
-    const key = st.valuesKey;
-    if (!key) return;
-    const ch = choicesFor(key, st.values[key]);
-    if (slot >= ch.length) return;
-    if (GLOBAL_KEYS.has(key)) { setGlobal(key, ch[slot].value); return; }
-    checkpoint();
-    for (const t of targets()) setP("t" + (t + 1) + ":" + key, ch[slot].value);
-    const m = metaFor(key);
-    banner((m && m.name ? m.name : key) + " " + ch[slot].label, st.held.size > 1 ? maskLabel(heldMask()) : "");
-    edited();
+    setTrack(key, rel(n));
+    if (key === "type") toast("TYPE", n > 0 ? "CC TRACK" : "NOTE TRACK");
 }
 
 function nudge(key, d) {
-    checkpoint();
-    for (const t of targets()) setP("t" + (t + 1) + ":" + key, rel(d));
-    const m = metaFor(key);
-    const cur = parseInt(st.values[key], 10) || 0;
-    let next = Math.max(m.min, Math.min(m.max, cur + d));
-    if (key === "pulses") next = Math.min(next, parseInt(st.values.steps, 10) || 16);
-    banner(m.name + " " + next, st.held.size > 1 ? maskLabel(heldMask()) : tname(st.focus));
-    edited();
+    if (GLOBAL_KEYS.has(key)) { setP(key, rel(d)); edited(); return; }
+    setTrack(key, rel(d));
 }
 
 function toggleMute(t) {
     checkpoint();
     const muted = st.snap ? (st.snap.mu >> t) & 1 : 0;
-    setP("t" + (t + 1) + ":mute", muted ? "0" : "1");
-    banner(muted ? "UNMUTE" : "MUTE", tname(t));
+    setP("t" + (t + 1) + ":mute", muted ? "Off" : "On");
+    toast(muted ? "ON" : "MUTE", tname(t));
     edited();
 }
 
-function setSolo(mask) {
-    st.soloMask = mask & 0xFFFF;
-    setP("perf:solo", hex(st.soloMask) + " " + (st.soloMask ? 1 : 0));
-    dirty = true;
+function applyMutes() {
+    if (!st.mutePend) return;
+    checkpoint();
+    const mu = st.snap ? st.snap.mu | 0 : 0;
+    let n = 0;
+    for (let t = 0; t < 16; t++) {
+        if (!((st.mutePend >> t) & 1)) continue;
+        setP("t" + (t + 1) + ":mute", (mu >> t) & 1 ? "Off" : "On");
+        n++;
+    }
+    st.mutePend = 0;
+    toast("MUTE", n + (n === 1 ? " TRACK" : " TRACKS"));
+    edited();
 }
 
 function clearTrack(t) {
     checkpoint();
     const p = "t" + (t + 1) + ":";
-    setP(p + "pulses", "0"); setP(p + "rotate", "0"); setP(p + "fill", "0");
-    setP(p + "clearedits", "1");
-    banner("CLEARED", tname(t));
+    setP(p + "pulses", "0"); setP(p + "rotate", "0");
+    setP(p + "addmask", "0"); setP(p + "delmask", "0");
+    for (let c = 1; c <= 16; c++) setP(p + "clearcycle", c);
+    toast("CLEAR", tname(t));
     edited();
 }
 
 function copyTrack(src, dst) {
     if (src === dst) return;
     checkpoint();
-    const from = parseDump(getP("dump:" + (src + 1)));
-    const to = parseDump(getP("dump:" + (dst + 1)));
-    for (const [k, v] of from) if (!IDENTITY.has(k)) to.set(k, v);
-    setP("stage:" + (dst + 1), joinDump(to));
-    setP("commit", "now");
-    banner("COPIED", "T" + (src + 1) + " > T" + (dst + 1));
+    graft(getP("dump:" + (src + 1)), dst);
+    toast("COPY", "T" + (src + 1) + " > T" + (dst + 1));
     edited();
 }
 
 function doUndo() {
     const prev = undo.pop();
-    if (!prev) { banner("NOTHING TO UNDO"); return; }
+    if (!prev) { toast("UNDO", "NOTHING LEFT"); return; }
     stageAll(prev, "now");
     lastEditAt = -1e9;
-    banner("UNDO", undo.length + " LEFT");
+    toast("UNDO", undo.length + " LEFT");
     edited();
 }
 
 /* ------------------------------------------------------------ perform */
 
 function perf(move, mask, value) { setP("perf:" + move, hex(mask) + " " + value); }
+
+function setSolo(mask) {
+    st.soloMask = mask & 0xFFFF;
+    setP("perf:solo", hex(st.soloMask) + " " + (st.soloMask ? 1 : 0));
+}
 
 function engage(i) {
     const p = PERFORM[i];
@@ -324,11 +333,11 @@ function perfPress(i, on) {
     if (p.kind === "shot") {
         if (p.move === "dice") {
             setP("seed", String(1 + Math.floor(Math.random() * 0x7FFFFFFE)));
-            banner("NEW DICE", "PROB AND THIN REROLLED");
+            toast("DICE", "REROLLED");
         } else {
             if (p.move === "rotate") checkpoint();
             perf(p.move, mask, p.value);
-            banner(p.label, maskLabel(mask));
+            toast(p.label, maskLabel(mask));
         }
         edited();
         return;
@@ -336,46 +345,68 @@ function perfPress(i, on) {
     if (st.latched[i]) {                       /* tap a latched pad to let go */
         st.latched[i] = false;
         disengage(i);
-        banner(p.label + " OFF");
+        toast(p.label, "OFF");
         return;
     }
     st.perfMask[i] = mask;
     engage(i);
-    if (st.shift) { st.latched[i] = true; banner(p.label + " LATCHED", maskLabel(mask)); }
-    else { st.perfHeld[i] = true; banner(p.label, maskLabel(mask)); }
+    if (st.shift) { st.latched[i] = true; toast(p.label, "LATCHED"); }
+    else { st.perfHeld[i] = true; toast(p.label, maskLabel(mask)); }
 }
 
 function releaseAllPerform() {
     for (let i = 0; i < 16; i++) { st.perfHeld[i] = false; st.latched[i] = false; }
     perf("clear", 0xFFFF, 0);
     st.soloMask = 0;
-    if (st.loopHeld) st.loopHeld = false;
+    st.loopHeld = false;
+    dirty = true;
 }
 
 /* ------------------------------------------------------------ patterns */
 
-function writePatterns() {
+function saveSession() {
+    sessionDirty = false;
     if (typeof host_write_file !== "function") return;
     if (typeof host_ensure_dir === "function") host_ensure_dir(SAVE_DIR);
-    host_write_file(PAT_FILE, JSON.stringify({ v: 1, current: st.current, slots: st.patterns }));
+    host_write_file(SESSION_FILE, JSON.stringify({
+        v: 3, setId: st.setId, setName: st.setName, dirty: st.dirty, current: st.current, patterns: st.patterns,
+    }));
 }
 
-function loadPatterns() {
+function loadSession() {
     if (typeof host_read_file !== "function") return;
-    const text = host_read_file(PAT_FILE);
+    const text = host_read_file(SESSION_FILE);
     if (!text) return;
     try {
         const o = JSON.parse(text);
-        if (o && Array.isArray(o.slots)) for (let i = 0; i < 16; i++) st.patterns[i] = o.slots[i] || null;
-        if (o && typeof o.current === "number") st.current = o.current;
+        if (!o || o.v !== 3) return;
+        if (Array.isArray(o.patterns)) for (let i = 0; i < 16; i++) st.patterns[i] = o.patterns[i] || null;
+        if (typeof o.current === "number") st.current = o.current;
+        if (o.setName) st.setName = String(o.setName);
+        st.setId = o.setId || null;
+        st.dirty = !!o.dirty;
     } catch (e) { /* a broken file leaves the slots empty */ }
 }
 
+function patternLabel(i) { const p = st.patterns[i]; return "P" + (i + 1) + (p && p.name ? " " + p.name : ""); }
+
 function savePattern(i) {
-    st.patterns[i] = dumpAll();
+    const old = st.patterns[i];
+    st.patterns[i] = { name: old && old.name ? old.name : "", tracks: dumpAll() };
     st.current = i;
-    writePatterns();
-    banner("SAVED", "PATTERN " + (i + 1));
+    st.dirty = true; sessionDirty = true;
+    toast("SAVED", patternLabel(i));
+}
+
+function recallPattern(i) {
+    const p = st.patterns[i];
+    if (!p) { toast("EMPTY", "SHIFT+PAD SAVES"); return; }
+    const running = st.snap && st.snap.r;
+    const now = !running || st.queued === i;      /* a second tap while it waits = switch now */
+    checkpoint();
+    stageAll(p.tracks, now ? "now" : "bar");
+    if (now) { st.current = i; st.queued = -1; sessionDirty = true; toast("PLAY", patternLabel(i)); edited(); }
+    else { st.queued = i; toast("NEXT", patternLabel(i)); }
 }
 
 function patternPress(i) {
@@ -383,33 +414,61 @@ function patternPress(i) {
         if (!st.patterns[i]) return;
         st.patterns[i] = null;
         if (st.current === i) st.current = -1;
-        writePatterns();
-        banner("DELETED", "PATTERN " + (i + 1));
+        st.dirty = true; sessionDirty = true;
+        toast("CLEAR", "P" + (i + 1));
         return;
     }
     if (st.copyHeld) {
-        if (st.copyPat < 0) { if (st.patterns[i]) { st.copyPat = i; banner("COPY P" + (i + 1), "PICK A SLOT"); } return; }
-        st.patterns[i] = st.patterns[st.copyPat].slice();
-        writePatterns();
-        banner("COPIED", "P" + (st.copyPat + 1) + " > P" + (i + 1));
+        if (st.copyPat < 0) { if (st.patterns[i]) { st.copyPat = i; toast("COPY", "P" + (i + 1) + " TO?"); } return; }
+        const src = st.patterns[st.copyPat];
+        st.patterns[i] = { name: src.name, tracks: src.tracks.slice() };
+        st.dirty = true; sessionDirty = true;
+        toast("COPY", "P" + (st.copyPat + 1) + " > P" + (i + 1));
         st.copyPat = -1;
         return;
     }
     if (st.shift) { savePattern(i); return; }
-    if (!st.patterns[i]) { banner("EMPTY", "SHIFT+PAD SAVES HERE"); return; }
-    const running = st.snap && st.snap.r;
-    /* Tap again while it waits = switch now. */
-    const now = !running || st.queued === i;
-    checkpoint();
-    stageAll(st.patterns[i], now ? "now" : "bar");
-    if (now) { st.current = i; st.queued = -1; banner("PATTERN " + (i + 1)); edited(); }
-    else { st.queued = i; banner("NEXT P" + (i + 1), "TAP AGAIN = NOW"); }
+    recallPattern(i);
 }
 
 function captureToNext() {
-    let i = st.patterns.findIndex((p) => !p);
-    if (i < 0) { banner("ALL 16 FULL", "SHIFT+PAD OVERWRITES"); return; }
+    const i = st.patterns.findIndex((p) => !p);
+    if (i < 0) { toast("FULL", "16 PATTERNS USED"); return; }
     savePattern(i);
+}
+
+/* ------------------------------------------------------------ cycles */
+
+function cyclePress(i, on) {
+    if (!on) { cycPadsDown.delete(i); return; }
+    const f = "t" + (st.focus + 1) + ":";
+    if (st.delHeld) { checkpoint(); setP(f + "clearcycle", i + 1); toast("CLEAR", "CYCLE " + (i + 1)); edited(); return; }
+    if (st.copyHeld) {
+        if (st.copyCyc < 0) { st.copyCyc = i; toast("COPY", "CYCLE " + (i + 1) + " TO?"); return; }
+        checkpoint();
+        setP(f + "copycycle", (st.copyCyc + 1) + " " + (i + 1));
+        toast("COPY", "C" + (st.copyCyc + 1) + " > C" + (i + 1));
+        st.copyCyc = -1;
+        edited();
+        return;
+    }
+    if (st.shift) { setTrack("cycles", i + 1); toast("CYCLES", String(i + 1)); return; }
+    const em = st.snap ? st.snap.em | 0 : 0;
+    let next;
+    if (cycPadsDown.size > 0) next = em | (1 << i);           /* hold one, tap more: edit them together */
+    else next = em === (1 << i) ? 0 : (1 << i);
+    cycPadsDown.add(i);
+    setP(f + "edit", hex(next));
+    if (next) toast("EDIT", "CYCLE " + (i + 1)); else toast("CYCLES", "ALL");
+    dirty = true;
+}
+
+function goHome() {
+    if (st.snap && (st.snap.em | 0)) setP("t" + (st.focus + 1) + ":edit", "0");
+    st.layerLock = null; st.layerHeld = null;
+    st.settings = false;
+    if (menu && menu.isOpen()) menu.close();
+    refreshLayer();
 }
 
 /* ------------------------------------------------------------ input */
@@ -419,7 +478,7 @@ function pressPlay() {
     if (st.shift) {
         const next = CLOCKS[(ck + 1) % 3];
         setP("clock", next);
-        banner("CLOCK " + next);
+        toast("CLOCK", next);
         edited();
         return;
     }
@@ -432,77 +491,92 @@ function pressPlay() {
 }
 
 function changePage(d) {
-    if (st.menu) return;
+    if (st.settings) return;
     const p = pages();
     const i = pageIndex(p, st.pageName);
     const n = Math.max(0, Math.min(p.length - 1, i + d));
+    if (p[n].name === st.pageName) return;
     st.pageName = p[n].name;
     knobAcc.fill(0);
-    banner(p[n].name, "PAGE " + (n + 1) + " OF " + p.length, [n, p.length]);
+    dirty = true;                    /* the header names the page; no pop-up */
 }
 
 function onStep(idx, on) {
     if (!on) return;
-    const steps = parseInt(st.values.steps, 10) || 16;
+    const steps = (st.snap && st.snap.sn) || parseInt(st.values.steps, 10) || 16;
     const f = "t" + (st.focus + 1) + ":";
     if (st.loopHeld) {
         const n = idx + 1;
         perf("freeze", loopMask, 0);
         perf("freeze", loopMask, n);
-        banner("FREEZE " + n, maskLabel(loopMask));
+        toast("FREEZE", n + " STEPS");
         return;
     }
-    if (st.shift) {
-        checkpoint();
-        for (const t of targets()) setP("t" + (t + 1) + ":steps", idx + 1);
-        banner("STEPS " + (idx + 1), st.held.size > 1 ? maskLabel(heldMask()) : tname(st.focus));
-        edited();
-        return;
-    }
-    if (st.delHeld) {
-        checkpoint();
-        setP(f + "clearedits", "1");
-        banner("HAND EDITS CLEARED", tname(st.focus));
-        edited();
-        return;
-    }
+    if (st.shift) { setTrack("steps", idx + 1); toast("STEPS", (idx + 1) + " " + who()); return; }
+    if (st.delHeld) { checkpoint(); setP(f + "clearedits", "1"); toast("CLEAR", "HAND EDITS"); edited(); return; }
     if (idx < steps) { checkpoint(); setP(f + "toggle", idx); edited(); }
 }
 
 function onTrackPad(t, on) {
     if (!on) { st.held.delete(t); dirty = true; return; }
     if (st.copyHeld) {
-        if (st.copySrc < 0) { st.copySrc = t; banner("COPY " + tname(t), "PICK A TRACK"); }
+        if (st.copySrc < 0) { st.copySrc = t; toast("COPY", tname(t) + " TO?"); }
         else { copyTrack(st.copySrc, t); st.copySrc = -1; }
         return;
     }
     if (st.delHeld) { clearTrack(t); return; }
+    if (st.muteHeld && !st.shift) { st.mutePend ^= 1 << t; dirty = true; return; }   /* applied on release */
     if (st.muteHeld || st.shift) { toggleMute(t); return; }
     if (st.held.size === 0) setFocus(t);
     st.held.add(t);
     dirty = true;
 }
 
-function onSlot(i, on) {
-    if (st.view === 1) { perfPress(i, on); return; }
+function onSlot(i, on, vel) {
+    const mode = padMode(st);
+    /* A note heard from this pad ends on release, whatever the pads show by then. */
+    if (!on && audNotes[i]) { setP("aud:" + audNotes[i].t, audNotes[i].n + " 0"); delete audNotes[i]; }
+    layerPadUsed = true;
+    if (mode === "perform") { perfPress(i, on); return; }
+    if (mode === "cycles") { cyclePress(i, on); return; }
     if (!on) return;
-    if (st.view === 0) pickValue(i);
-    else if (st.view === 2) {
-        if (st.shift) {
-            const m = st.soloMask ^ (1 << i);
-            setSolo(m);
-            banner(m ? "SOLO" : "SOLO OFF", m ? maskLabel(m) : "");
-        } else toggleMute(i);
-    } else if (st.view === 3) patternPress(i);
+    if (mode === "pattern") { patternPress(i); return; }
+    const act = padModel(st).pads[i].act;
+    if (!act) return;
+    switch (act.k) {
+    case "set":
+        if (GLOBAL_KEYS.has(act.key)) setGlobal(act.key, act.value);
+        else setTrack(act.key, act.value);
+        toast(st.padKey, (act.label || act.value).replace(/^\S+\s/, "") + " " + who());
+        break;
+    case "nudge": nudge(act.key, act.d); break;
+    case "pool":
+        if (!st.shift) setTrack("pooltoggle", act.note);         /* Shift = just hear it */
+        if (audNotes[i]) setP("aud:" + audNotes[i].t, audNotes[i].n + " 0");
+        setP("aud:" + (st.focus + 1), act.note + " " + Math.max(1, vel));
+        audNotes[i] = { t: st.focus + 1, n: act.note };
+        break;
+    case "oct":
+        st.kbOct = Math.max(-2, Math.min(8, st.kbOct + act.d));
+        dirty = true;
+        break;
+    default: break;
+    }
 }
 
 function onNote(note, vel) {
     const on = vel > 0;
-    if (note >= 0 && note <= 7) {               /* knob touch */
+    if (note >= 0 && note <= 7) {               /* knob touch: the pads follow */
         if (on) {
             st.touched = note;
-            const key = currentPage().keys[note];
-            if (key) st.valuesKey = key;
+            const key = knobKeys(st)[note];
+            if (key && st.delHeld) {
+                checkpoint();
+                for (const t of targets()) setP("t" + (t + 1) + ":clearparam", baseKey(key));
+                toast("CLEAR", (metaFor(baseKey(key)) || {}).name + " CYCLES");
+                edited();
+            }
+            showPadsFor(key);
         } else if (st.touched === note) st.touched = -1;
         dirty = true;
         return;
@@ -512,92 +586,106 @@ function onNote(note, vel) {
     const t = padToTrack(note);
     if (t >= 0) { onTrackPad(t, on); return; }
     const slot = padToSlot(note);
-    if (slot >= 0) onSlot(slot, on);
+    if (slot >= 0) onSlot(slot, on, vel);
+}
+
+function onLayerButton(cc, down) {
+    const name = LAYER_OF[cc];
+    if (down) {
+        if (name === "perform" && st.shift) { releaseAllPerform(); toast("PERFORM", "ALL OFF"); return; }
+        layerSkipLock = st.layerLock === name;
+        st.layerLock = null;                     /* one latch at a time */
+        st.layerHeld = name;
+        layerPressAt = st.now;
+        layerPadUsed = false;
+    } else if (st.layerHeld === name) {
+        if (!layerSkipLock && !layerPadUsed && st.now - layerPressAt < TAP_MS) st.layerLock = name;
+        st.layerHeld = null;
+        if (name === "perform" && st.layerLock !== "perform")
+            for (let i = 0; i < 16; i++) if (st.perfHeld[i]) { st.perfHeld[i] = false; if (!st.latched[i]) disengage(i); }
+    }
+    refreshLayer();
+}
+
+function onMenuInput(cc, v) {
+    if (cc === CC.jogTurn) { const d = decodeDelta(v); if (d) menu.jog(d > 0 ? 1 : -1); return true; }
+    if (v === 0) return cc !== CC.shift;
+    if (cc === CC.jogClick) { menu.click(); return true; }
+    if (cc === CC.menu || cc === CC.left) { menu.back(); return true; }
+    return cc !== CC.shift && cc !== CC.play;    /* everything else waits until the menu closes */
 }
 
 function onCC(cc, v) {
     const down = v > 0;
-    if (cc === CC.shift) { st.shift = down; dirty = true; return; }
-    if (cc === CC.mute) { st.muteHeld = down; return; }
-    if (cc === CC.copy) { st.copyHeld = down; if (!down) { st.copySrc = -1; st.copyPat = -1; } dirty = true; return; }
+    if (menu && menu.isOpen() && onMenuInput(cc, v)) { dirty = true; return; }
+    if (cc === CC.shift) { st.shift = down; knobAcc.fill(0); dirty = true; return; }
+    if (cc === CC.mute) { st.muteHeld = down; if (!down) applyMutes(); dirty = true; return; }
+    if (cc === CC.copy) { st.copyHeld = down; if (!down) { st.copySrc = -1; st.copyPat = -1; st.copyCyc = -1; } dirty = true; return; }
     if (cc === CC.del) { st.delHeld = down; return; }
     if (cc >= CC.knob0 && cc < CC.knob0 + 8) { turnKnob(cc - CC.knob0, decodeDelta(v)); return; }
     if (cc === CC.jogTurn) {
         const d = decodeDelta(v);
         if (!d) return;
-        if (st.shift) {
-            setP("bpm", rel(d)); edited();
-            banner("TEMPO " + Math.round((st.snap ? st.snap.bpm : 120) + d), (st.snap && st.snap.ck === 1) ? "" : "USED ON INTERNAL CLOCK");
-            return;
-        }
+        if (st.shift) { setP("bpm", rel(d)); edited(); toast("TEMPO", String(Math.round((st.snap ? st.snap.bpm : 120) + d))); return; }
         changePage(d > 0 ? 1 : -1);
         return;
     }
-    if (cc === CC.sample) {
-        if (down) {
-            st.sampleHeld = true; st.keepTemp = false;
-            setP("temp", "1");
-            banner("TEMP", "LET GO TO UNDO");
-        } else if (st.sampleHeld) {
-            st.sampleHeld = false;
-            if (!st.keepTemp) { setP("temp", "0"); banner("RESTORED"); edited(); }
+    if (cc in LAYER_OF) { onLayerButton(cc, down); return; }
+    if (cc === CC.lTemp) {
+        if (down) { st.tempHeld = true; st.keepTemp = false; setP("temp", "1"); toast("TEMP", "LET GO TO UNDO"); }
+        else if (st.tempHeld) {
+            st.tempHeld = false;
+            if (!st.keepTemp) { setP("temp", "0"); toast("TEMP", "RESTORED"); }
         }
+        return;
+    }
+    if (cc === CC.sample) {
+        if (down && st.delHeld) { setTrack("clearrandom", "1"); toast("CLEAR", "RANDOM " + who()); return; }
+        st.randomHeld = down;
+        knobAcc.fill(0);
+        if (down) toast("RANDOM", "TURN A KNOB");
+        dirty = true;
         return;
     }
     if (cc === CC.loop) {
         const mask = heldMask() || 0xFFFF;
-        if (down) { st.loopHeld = true; loopMask = mask; perf("freeze", mask, 0); perf("freeze", mask, 4); banner("FREEZE 4", maskLabel(mask)); }
+        if (down) { st.loopHeld = true; loopMask = mask; perf("freeze", mask, 0); perf("freeze", mask, 4); toast("FREEZE", "4 STEPS"); }
         else if (st.loopHeld) { st.loopHeld = false; perf("freeze", loopMask, 0); dirty = true; }
         return;
     }
     if (!down) return;   /* the rest act on press */
-    if (cc >= CC.trackBottom && cc <= CC.trackTop) {
-        const view = CC.trackTop - cc;
-        if (view === 1 && st.view === 1) { releaseAllPerform(); banner("ALL MOVES OFF"); }
-        else if (view !== st.view) {
-            if (st.view === 1) for (let i = 0; i < 16; i++) if (st.perfHeld[i]) { st.perfHeld[i] = false; if (!st.latched[i]) disengage(i); }
-            st.view = view;
-            banner(VIEWS[view].toUpperCase(), ["PICK A VALUE", "HOLD PADS. SHIFT LATCHES", "TAP MUTES. SHIFT SOLOS", "TAP PLAYS. SHIFT SAVES"][view]);
-        }
-        return;
-    }
     switch (cc) {
     case CC.play: pressPlay(); break;
     case CC.menu:
         if (st.shift) {
             const d = st.snap ? st.snap.d | 0 : 0;
             setGlobal("dest", DESTS[(d + 1) % 3]);
-            banner("TO " + DESTS[(d + 1) % 3]);
-        } else {
-            st.menu = !st.menu;
-            if (st.menu) st.valuesKey = "dest";
-            knobAcc.fill(0);
-            banner(st.menu ? "SETTINGS" : st.pageName);
-        }
+            toast("OUT", DESTS[(d + 1) % 3]);
+        } else if (st.settings) { st.settings = false; dirty = true; }
+        else if (menu) { menu.open(); dirty = true; }
         break;
-    case CC.jogClick:
-        st.menu = false;
-        if (st.pageName !== "Rhythm") { st.pageName = "Rhythm"; knobAcc.fill(0); banner("RHYTHM", "PAGE 1"); }
+    case CC.jogClick: goHome(); break;
+    case CC.up: case CC.down: {
+        const d = cc === CC.up ? 1 : -1;
+        if (st.padKey === "pitch") { st.kbOct = Math.max(-2, Math.min(8, st.kbOct + d)); toast("NOTES", "OCTAVE " + st.kbOct); break; }
+        const n = padPages(st.padKey);
+        const p = Math.max(0, Math.min(n - 1, st.padPage + d));
+        if (p !== st.padPage) { st.padPage = p; toast("PADS", "PAGE " + (p + 1) + "/" + n); }
         break;
-    case CC.up: nudge(st.shift ? "steps" : "pulses", 1); break;
-    case CC.down: nudge(st.shift ? "steps" : "pulses", -1); break;
+    }
     case CC.undo: doUndo(); break;
     case CC.capture:
-        if (st.sampleHeld) { st.keepTemp = true; setP("temp", "keep"); banner("KEPT"); edited(); }
+        if (st.tempHeld) { st.keepTemp = true; setP("temp", "keep"); toast("TEMP", "KEPT"); edited(); }
         else captureToNext();
         break;
     case CC.left: case CC.right: {
         const d = cc === CC.right ? 1 : -1;
-        if (st.shift) {
-            checkpoint();
-            for (const t of targets()) setP("t" + (t + 1) + ":rotate", rel(d));
-            banner("ROTATE " + (d > 0 ? "+1" : "-1"), st.held.size > 1 ? maskLabel(heldMask()) : tname(st.focus));
-            edited();
-        } else {
-            const steps = parseInt(st.values.steps, 10) || 16;
+        if (st.shift) { setTrack("rotate", rel(d)); toast("ROTATE", (d > 0 ? "+1 " : "-1 ") + who()); }
+        else {
+            const steps = (st.snap && st.snap.sn) || 16;
             const maxPage = Math.max(0, Math.ceil(steps / 16) - 1);
             const n = Math.max(0, Math.min(maxPage, st.stepPage + d));
-            if (n !== st.stepPage) { st.stepPage = n; banner("STEPS " + (n * 16 + 1) + "-" + Math.min(steps, n * 16 + 16)); }
+            if (n !== st.stepPage) { st.stepPage = n; toast("STEPS", (n * 16 + 1) + "-" + Math.min(steps, n * 16 + 16)); }
         }
         break;
     }
@@ -607,6 +695,7 @@ function onCC(cc, v) {
 
 globalThis.onMidiMessageInternal = function (data) {
     if (!data || globalThis.overtakeParked) return;
+    if (isTextEntryActive()) { handleTextEntryMidi(data); return; }
     const s = data[0] | 0, d1 = data[1] | 0, d2 = data[2] | 0, type = s & 0xF0;
     if (s >= 0xF8) return;
     if (type === 0x90) onNote(d1, d2);
@@ -616,27 +705,117 @@ globalThis.onMidiMessageInternal = function (data) {
 
 globalThis.onMidiMessageExternal = function () { /* E-1 ignores incoming notes for now */ };
 
+/* ------------------------------------------------------------ library */
+
+function setObject() {
+    return {
+        v: 1, name: st.setName,
+        globals: JSON.stringify({ g: getP("dump:g") || "", live: dumpAll() }),
+        trackNames: st.snap && st.snap.nm ? st.snap.nm.slice() : [],
+        current: st.current,
+        patterns: st.patterns,
+    };
+}
+
+function applySet(id, set) {
+    for (let i = 0; i < 16; i++) st.patterns[i] = set.patterns[i] || null;
+    st.current = typeof set.current === "number" ? set.current : -1;
+    st.queued = -1;
+    st.setId = id; st.setName = set.name;
+    let extra = null;
+    try { extra = JSON.parse(set.globals || "null"); } catch (e) { extra = null; }
+    if (extra && extra.g) setP("load:g", extra.g);
+    const live = extra && Array.isArray(extra.live) ? extra.live
+        : (st.current >= 0 && st.patterns[st.current] ? st.patterns[st.current].tracks : null);
+    if (live) stageAll(live, "now");
+    undo = [];
+    editsSinceSave++; idleTicks = 0;
+    st.dirty = false; sessionDirty = true;
+}
+
+const host = {
+    state() {
+        return {
+            setId: st.setId, setName: st.setName, dirty: st.dirty,
+            sets: lib.listSets(),
+            patterns: st.patterns.map((p) => ({ name: p ? p.name : "", filled: !!p })),
+            currentPattern: st.current,
+            focus: st.focus,
+            trackNames: Array.from({ length: 16 }, (_, t) => trackName(st, t)),
+            presets: lib.listTrackPresets(),
+        };
+    },
+    askName(title, initial, onConfirm) {
+        openTextEntry({ title, initialText: initial || "", onConfirm: (text) => { onConfirm(text); dirty = true; }, onCancel: () => { dirty = true; } });
+    },
+    act(name, a) {
+        a = a || {};
+        switch (name) {
+        case "settings.open": st.settings = true; break;
+        case "set.save":
+            if (st.setId) lib.saveSet(st.setId, setObject()); else st.setId = lib.createSet(st.setName, setObject());
+            lib.setLast(st.setId); st.dirty = false; sessionDirty = true;
+            break;
+        case "set.saveAs":
+            st.setName = a.name;
+            st.setId = lib.createSet(a.name, setObject());
+            lib.setLast(st.setId); st.dirty = false; sessionDirty = true;
+            break;
+        case "set.new":
+            st.patterns.fill(null); st.current = -1; st.queued = -1;
+            st.setName = a.name;
+            st.setId = lib.createSet(a.name, setObject());
+            lib.setLast(st.setId); st.dirty = false; sessionDirty = true;
+            break;
+        case "set.load": { const s = lib.loadSet(a.id); if (s) { applySet(a.id, s); lib.setLast(a.id); } break; }
+        case "set.rename": lib.renameSet(a.id, a.name); if (a.id === st.setId) { st.setName = a.name; sessionDirty = true; } break;
+        case "set.duplicate": lib.duplicateSet(a.id); break;
+        case "set.delete": lib.deleteSet(a.id); if (a.id === st.setId) { st.setId = null; st.dirty = true; sessionDirty = true; } break;
+        case "pattern.goto": recallPattern(a.i); break;
+        case "pattern.save": savePattern(a.i); break;
+        case "pattern.rename": if (st.patterns[a.i]) { st.patterns[a.i].name = a.name; st.dirty = true; sessionDirty = true; } break;
+        case "pattern.copy":
+            if (st.patterns[a.from]) { st.patterns[a.to] = { name: st.patterns[a.from].name, tracks: st.patterns[a.from].tracks.slice() }; st.dirty = true; sessionDirty = true; }
+            break;
+        case "pattern.clear": st.patterns[a.i] = null; if (st.current === a.i) st.current = -1; st.dirty = true; sessionDirty = true; break;
+        case "preset.save": lib.saveTrackPreset(a.name, getP("dump:" + (st.focus + 1)) || ""); break;
+        case "preset.load": { const p = lib.getTrackPreset(a.i); if (p) { checkpoint(); graft(p.dump, st.focus); edited(); } break; }
+        case "preset.rename": lib.renameTrackPreset(a.i, a.name); break;
+        case "preset.delete": lib.deleteTrackPreset(a.i); break;
+        case "track.rename": checkpoint(); setP("t" + (a.t + 1) + ":name", String(a.name).toUpperCase().slice(0, 12)); edited(); break;
+        default: break;
+        }
+        dirty = true;
+    },
+};
+
 /* ------------------------------------------------------------ LEDs */
 
 function buttonFrame() {
     const s = st.snap || {};
     const b = {};
+    const lay = (name, col) => (st.layer === name ? (st.layerLock === name ? COL.white : col) : COL.dim);
     b[CC.play] = s.r ? COL.green : COL.dim;
-    b[CC.menu] = st.menu ? COL.white : COL.dim;
+    b[CC.menu] = (menu && menu.isOpen()) || st.settings ? COL.white : COL.dim;
     b[CC.shift] = st.shift ? COL.white : COL.dim;
-    b[CC.mute] = (s.mu | 0) ? COL.white : COL.dim;
-    b[CC.sample] = s.tmp ? COL.white : COL.dim;
+    b[CC.mute] = st.muteHeld || (s.mu | 0) ? COL.white : COL.dim;
+    b[CC.sample] = st.randomHeld ? COL.white : COL.dim;
     b[CC.loop] = st.loopHeld ? COL.white : COL.dim;
     b[CC.capture] = COL.dim;
     b[CC.undo] = undo.length ? COL.dim : COL.off;
     b[CC.copy] = st.copyHeld ? COL.white : COL.dim;
     b[CC.del] = st.delHeld ? COL.white : COL.dim;
-    b[CC.up] = COL.dim; b[CC.down] = COL.dim;
-    const steps = parseInt(st.values.steps, 10) || 16;
+    const pp = padPages(st.padKey);
+    b[CC.up] = st.padKey === "pitch" || st.padPage < pp - 1 ? COL.white : COL.dim;
+    b[CC.down] = st.padKey === "pitch" || st.padPage > 0 ? COL.white : COL.dim;
+    const steps = (s.sn | 0) || 16;
     b[CC.left] = st.stepPage > 0 ? COL.white : COL.off;
     b[CC.right] = (st.stepPage + 1) * 16 < steps ? COL.white : COL.off;
-    for (let i = 0; i < 4; i++) b[CC.trackTop - i] = st.view === i ? VIEW_COL[i] : COL.dim;
-    const keys = currentPage().keys;
+    b[CC.lPattern] = lay("pattern", COL.green);
+    b[CC.lCycles] = (s.em | 0) ? COL.red : lay("cycles", COL.blue);
+    b[CC.lTemp] = s.tmp ? COL.white : COL.dim;
+    b[CC.lPerform] = lay("perform", COL.orange);
+    const keys = knobKeys(st);
     for (let i = 0; i < 8; i++) b[CC.knob0 + i] = keys[i] ? COL.white : COL.off;
     return b;
 }
@@ -686,16 +865,18 @@ function updateWarning() {
 
 function draw() {
     if (typeof clear_screen !== "function") return;
+    if (isTextEntryActive()) { drawTextEntry(); return; }
     clear_screen();
+    if (menu && menu.isOpen()) { menu.draw(ctx); return; }
+    if (st.layer === "pattern") { drawPatternGrid(ctx, st); return; }
     renderPageMovy(ctx, pageOptions(st, LIB));
-    drawBanner(ctx, st, LIB);
 }
 
 /* ------------------------------------------------------------ save/load */
 
-function loadProject() {
+function loadLive() {
     if (typeof host_read_file !== "function") return;
-    const text = host_read_file(SAVE_FILE);
+    const text = host_read_file(LIVE_FILE);
     if (!text) return;
     let section = null, buf = [];
     const flush = () => {
@@ -712,27 +893,28 @@ function loadProject() {
 const SECTIONS = ["g"].concat(Array.from({ length: 16 }, (_, i) => String(i + 1)));
 const part = (k) => "[" + (k === "g" ? "g" : "t" + k) + "]\n" + (getP("dump:" + k) || "");
 
-function writeProject(parts) {
+function writeLive(parts) {
     if (typeof host_write_file !== "function") return;
     if (typeof host_ensure_dir === "function") host_ensure_dir(SAVE_DIR);
-    host_write_file(SAVE_FILE, parts.join("\n") + "\n");
+    host_write_file(LIVE_FILE, parts.join("\n") + "\n");
 }
 
 /* One read per tick so saving never stalls the screen. Temp edits are not
  * saved until they are kept. */
 function saveStep() {
     if (saveQueue.length === 0) {
-        if (editsSinceSave === 0 || (st.snap && st.snap.tmp) || ++idleTicks < 120) return;
+        if (sessionDirty && idleTicks > 40) { saveSession(); return; }
+        if (editsSinceSave === 0 || (st.snap && st.snap.tmp) || ++idleTicks < 120) { if (sessionDirty) idleTicks++; return; }
         editsSinceSave = 0;
         saveQueue = SECTIONS.slice();
         saveParts = [];
         return;
     }
     saveParts.push(part(saveQueue.shift()));
-    if (saveQueue.length === 0) writeProject(saveParts);
+    if (saveQueue.length === 0) writeLive(saveParts);
 }
 
-function saveNow() { writeProject(SECTIONS.map(part)); }
+function saveNow() { writeLive(SECTIONS.map(part)); }
 
 /* ------------------------------------------------------------ lifecycle */
 
@@ -740,8 +922,17 @@ globalThis.init = function () {
     st.now = Date.now();
     const pk = getP("pkeys");
     pkeys = pk ? pk.split(",") : [];
-    loadProject();
-    loadPatterns();
+    lib = createLibrary({
+        io: {
+            read: (p) => (typeof host_read_file === "function" ? host_read_file(p) : null),
+            write: (p, t) => { if (typeof host_write_file === "function") host_write_file(p, t); },
+            ensureDir: (p) => { if (typeof host_ensure_dir === "function") host_ensure_dir(p); },
+        },
+        dir: SAVE_DIR,
+    });
+    menu = createMenu({ host });
+    loadLive();
+    loadSession();
     setP("focus", st.focus + 1);
     ledHave = {};
     poll();
@@ -751,17 +942,22 @@ globalThis.init = function () {
  * reached us, so let go of everything held. */
 globalThis.onResume = function () {
     st.now = Date.now();
-    st.shift = st.muteHeld = st.copyHeld = st.delHeld = false;
+    st.shift = st.muteHeld = st.copyHeld = st.delHeld = st.randomHeld = false;
+    st.mutePend = 0;
     st.held.clear();
-    st.copySrc = st.copyPat = -1;
+    st.copySrc = st.copyPat = st.copyCyc = -1;
     st.touched = -1;
+    st.layerHeld = null;
+    cycPadsDown.clear();
+    for (const i in audNotes) setP("aud:" + audNotes[i].t, audNotes[i].n + " 0");
+    audNotes = {};
     for (let i = 0; i < 16; i++) if (st.perfHeld[i]) { st.perfHeld[i] = false; if (!st.latched[i]) disengage(i); }
     if (st.loopHeld) { st.loopHeld = false; perf("freeze", loopMask, 0); }
-    if (st.sampleHeld) { st.sampleHeld = false; if (!st.keepTemp) setP("temp", "0"); }
+    if (st.tempHeld) { st.tempHeld = false; if (!st.keepTemp) setP("temp", "0"); }
     knobAcc.fill(0);
     ledHave = {};
     lastSnapStr = "";
-    dirty = true;
+    refreshLayer();
 };
 
 let frame = 0;
@@ -772,15 +968,20 @@ globalThis.tick = function () {
     saveStep();
     /* Parked behind another screen: keep state and saving going, draw nothing. */
     if (globalThis.overtakeParked) return;
+    const typing = isTextEntryActive();
+    if (typing) { tickTextEntry(); draw(); wasTyping = true; return; }
+    if (wasTyping) { wasTyping = false; ledHave = {}; dirty = true; }   /* text entry used the pads */
     if ((frame & 15) === 0) updateWarning();
     pushLEDs();
-    const showing = !!(st.banner && st.banner.until > st.now);
-    if (showing !== bannerShown) { bannerShown = showing; dirty = true; }
+    const showing = !!(st.toast && st.toast.until > st.now);
+    if (showing !== toastShown) { toastShown = showing; dirty = true; }
+    if ((frame % 6) === 0 && ((menu && menu.isOpen()) || (st.layer === "pattern" && st.queued >= 0))) dirty = true;
     if (dirty) { draw(); dirty = false; }
 };
 
 globalThis.onUnload = function () {
     if (editsSinceSave > 0 || saveQueue.length > 0) saveNow();
+    if (sessionDirty) saveSession();
     setP("perf:clear", "ffff 0");
     setP("panic", "1");
 };

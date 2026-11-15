@@ -10,16 +10,6 @@
       "github_repo": "pi43r/move-e1",
       "default_branch": "main",
       "asset_name": "e1-module.tar.gz"
-    },
-    {
-      "id": "e1_lite",
-      "name": "E-1 Lite",
-      "description": "One E-1 Euclidean track as a slot MIDI FX.",
-      "author": "pi43r",
-      "component_type": "midi_fx",
-      "github_repo": "pi43r/move-e1",
-      "default_branch": "main",
-      "asset_name": "e1_lite-module.tar.gz"
     }
   ]
 }

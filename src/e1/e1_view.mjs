@@ -1,8 +1,8 @@
 /*
- * e1_view.mjs — what E-1 shows: knob pages, parameter metadata, the four
- * bottom-pad views, LED colours and the screen. Pure functions over a state
- * object with no device globals, so tools/preview.mjs can render it
- * headlessly with Schwung's own renderer.
+ * e1_view.mjs — what E-1 shows: knob pages, parameter metadata, what the
+ * bottom 16 pads mean for the knob under your finger, LED colours and the
+ * screen. Pure functions over a state object with no device globals, so
+ * tools/preview.mjs can render everything headlessly.
  *
  * Inspired by the Torso T-1. Not affiliated with Torso Electronics.
  */
@@ -12,65 +12,106 @@ export const DIVISIONS = ["1/1", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64",
 export const LENGTHS = ["Off", "1", "2", "3", "4", "5", "6", "7", "8", "16"];
 export const CLOCKS = ["Move", "Internal", "Computer"];
 export const DESTS = ["Move", "Computer", "Both"];
-export const VIEWS = ["Values", "Perform", "Mutes", "Patterns"];
+export const QUANTS = ["1/4", "1/2", "1 bar", "2 bars", "4 bars", "8 bars"];
+export const STYLES = ["PolyFix", "PolyRamp", "PolyClimb", "MonoFix", "MonoRamp", "MonoClimb"];
+export const PHRASES = ["Cad1", "Cad2", "Cad3", "Cad4", "Saw", "Tri", "Sine", "Pulse"];
+export const SCALES = ["Chrom", "Major", "Minor", "Penta", "Hira", "Iwato", "Tetra", "Dorian"];
+export const ROOTS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+export const GROOVES = ["Agogo", "Congas", "Timbal", "Bongo", "Saw", "Tri", "Sine", "Pulse"];
+export const REPEATS_INF = 49;
 
-const NOTE_PC = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-export const noteName = (n) => NOTE_PC[n % 12] + (Math.floor(n / 12) - 2);
+const SCALE_DEG = [
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], [0, 2, 4, 5, 7, 9, 11], [0, 2, 3, 5, 7, 8, 10], [0, 2, 4, 7, 9],
+    [0, 2, 3, 7, 8], [0, 1, 5, 6, 10], [0, 4, 7, 10], [0, 2, 3, 5, 7, 9, 10],
+];
 
-/* Track parameters in Schwung's chain_params shape. `div` is how many encoder
- * ticks one value step takes: small ranges move slowly so a value is easy
- * to land on, wide ranges move one value per tick. */
+export const noteName = (n) => ROOTS[n % 12] + (Math.floor(n / 12) - 2);
+
+/* Track parameters in Schwung's chain_params shape. `div` = encoder detents
+ * per value: small ranges move slowly so a value is easy to land on.
+ * `rnd` marks parameters that take a random amount. */
 export const TRACK_PARAMS = [
-    { key: "type", name: "Type", type: "enum", options: ["Note", "CC"], div: 6 },
-    { key: "steps", name: "Steps", type: "int", min: 1, max: 64, div: 4 },
-    { key: "pulses", name: "Pulses", type: "int", min: 0, max: 64, div: 4 },
-    { key: "rotate", name: "Rotate", type: "int", min: 0, max: 63, div: 4 },
+    { key: "type", name: "Type", type: "enum", options: ["Note", "CC"], div: 8 },
+    { key: "steps", name: "Steps", type: "int", min: 1, max: 64, div: 4, rnd: 1 },
+    { key: "pulses", name: "Pulses", type: "int", min: 0, max: 64, div: 4, rnd: 1 },
+    { key: "rotate", name: "Rotate", type: "int", min: 0, max: 63, div: 4, rnd: 1 },
     { key: "division", name: "Div", type: "enum", options: DIVISIONS, div: 5 },
     { key: "length", name: "Length", type: "enum", options: LENGTHS, div: 5 },
     { key: "cycles", name: "Cycles", type: "int", min: 1, max: 16, div: 4 },
-    { key: "prob", name: "Prob", type: "int", min: 0, max: 100, div: 1 },
+    { key: "velocity", name: "Vel", type: "int", min: 1, max: 127, div: 1, rnd: 1 },
+    { key: "prob", name: "Prob", type: "int", min: -100, max: 100, div: 1, rnd: 1 },
+    { key: "sustain", name: "Sustain", type: "int", min: 1, max: 100, div: 1, rnd: 1 },
+    { key: "repeats", name: "Repeats", type: "int", min: 0, max: REPEATS_INF, div: 3, rnd: 1 },
+    { key: "time", name: "Time", type: "enum", options: DIVISIONS, div: 5 },
+    { key: "ramp", name: "Ramp", type: "int", min: -100, max: 100, div: 1 },
+    { key: "pace", name: "Pace", type: "int", min: -100, max: 100, div: 1 },
     { key: "fill", name: "Fill", type: "int", min: 0, max: 16, div: 4 },
-    { key: "channel", name: "Chan", type: "int", min: 1, max: 16, div: 4 },
-    { key: "output", name: "Output", type: "enum", options: ["Global", "Move", "Computer", "Both"], div: 6 },
-    { key: "notemode", name: "Mode", type: "enum", options: ["Drum", "Melodic"], div: 6 },
-    { key: "note", name: "Note", type: "int", min: 0, max: 127, div: 2 },
-    { key: "vel", name: "Vel", type: "int", min: 1, max: 127, div: 1 },
-    { key: "sustain", name: "Sustain", type: "int", min: 1, max: 100, div: 1 },
-    { key: "timing", name: "Swing", type: "int", min: -50, max: 50, div: 1 },
     { key: "delay", name: "Delay", type: "int", min: -50, max: 50, div: 1 },
-    { key: "mute", name: "Mute", type: "enum", options: ["Off", "On"], div: 6 },
-    { key: "ccmode", name: "Send", type: "enum", options: ["Pulse", "Change", "Glide"], div: 6 },
+    { key: "pitch", name: "Pitch", type: "int", min: -36, max: 36, div: 3, rnd: 1 },
+    { key: "harmony", name: "Harmony", type: "int", min: -16, max: 16, div: 4, rnd: 1 },
+    { key: "voicing", name: "Voicing", type: "int", min: -16, max: 16, div: 4, rnd: 1 },
+    { key: "style", name: "Style", type: "enum", options: STYLES, div: 6 },
+    { key: "range", name: "Range", type: "int", min: -16, max: 16, div: 4, rnd: 1 },
+    { key: "phrase", name: "Phrase", type: "enum", options: PHRASES, div: 6 },
+    { key: "scale", name: "Scale", type: "enum", options: SCALES, div: 6 },
+    { key: "root", name: "Root", type: "enum", options: ROOTS, div: 5 },
+    { key: "accent", name: "Accent", type: "int", min: -100, max: 100, div: 1, rnd: 1 },
+    { key: "groove", name: "Groove", type: "enum", options: GROOVES, div: 6 },
+    { key: "timing", name: "Timing", type: "int", min: -50, max: 50, div: 1, rnd: 1 },
+    { key: "swinggrid", name: "Grid", type: "enum", options: ["x1", "x2", "x4"], div: 8 },
+    { key: "random", name: "Random", type: "int", min: 0, max: 100, div: 1 },
+    { key: "rate", name: "Rate", type: "enum", options: DIVISIONS, div: 5 },
+    { key: "channel", name: "Chan", type: "int", min: 1, max: 16, div: 4 },
+    { key: "output", name: "Output", type: "enum", options: ["Global", "Move", "Computer", "Both"], div: 8 },
+    { key: "mute", name: "Mute", type: "enum", options: ["Off", "On"], div: 8 },
+    { key: "dir", name: "Dir", type: "enum", options: ["Up", "Down"], div: 8 },
+    { key: "tail", name: "Repeat", type: "enum", options: ["Choke", "Tail"], div: 8 },
+    { key: "phraserate", name: "PhrRate", type: "enum", options: ["x1", "x2", "/2"], div: 8 },
+    { key: "ccmode", name: "Send", type: "enum", options: ["Pulse", "Change", "Glide"], div: 8 },
     { key: "slew", name: "Slew", type: "int", min: 0, max: 100, div: 1 },
 ];
 
 export const GLOBAL_PARAMS = [
-    { key: "dest", name: "Dest", type: "enum", options: DESTS, div: 6 },
-    { key: "clock", name: "Clock", type: "enum", options: CLOCKS, div: 6 },
+    { key: "dest", name: "Dest", type: "enum", options: DESTS, div: 8 },
+    { key: "clock", name: "Clock", type: "enum", options: CLOCKS, div: 8 },
     { key: "bpm", name: "Tempo", type: "int", min: 20, max: 300, div: 1 },
-    { key: "clockout", name: "ClkOut", type: "enum", options: ["Off", "On"], div: 6 },
+    { key: "clockout", name: "ClkOut", type: "enum", options: ["Off", "On"], div: 8 },
+    { key: "quant", name: "Quant", type: "enum", options: QUANTS, div: 6 },
 ];
+export const GLOBAL_KEYS = new Set(GLOBAL_PARAMS.map((p) => p.key));
 
-/* Knob pages. Rhythm and Setup are the same on both track types, and Type
- * is knob 3 of Setup on both, so switching a track's type never moves you. */
+/* Knob pages. `keys` is what the knobs do, `alt` what they do with Shift
+ * held, the same pairing the T-1 prints under each knob. */
+const SHAPE = {
+    name: "Shape",
+    keys: ["steps", "pulses", "cycles", "division", "repeats", "time", "velocity", "sustain"],
+    alt: ["length", "rotate", "fill", "quant", "ramp", "pace", "prob", "delay"],
+};
 export const NOTE_PAGES = [
-    { name: "Rhythm", keys: ["steps", "pulses", "rotate", "division", "length", "cycles", "prob", "fill"], color: "orange" },
-    { name: "Groove", keys: ["vel", "sustain", "timing", "delay", null, null, null, null], color: "green" },
-    { name: "Setup", keys: ["channel", "output", "type", "mute", "notemode", "note", null, null], color: "white" },
+    SHAPE,
+    { name: "Tone",
+        keys: ["pitch", "voicing", "range", "scale", "accent", "timing", "random", "channel"],
+        alt: ["harmony", "style", "phrase", "root", "groove", "swinggrid", "rate", "output"] },
 ];
+const lanes = (a, p) => Array.from({ length: 8 }, (_, i) => p + (a + i));
 export const CC_PAGES = [
-    { name: "Rhythm", keys: ["steps", "pulses", "rotate", "division", "length", "cycles", "prob", "fill"], color: "orange" },
-    { name: "CC A", keys: ["cc1", "cc2", "cc3", "cc4", "cc5", "cc6", "cc7", "cc8"], color: "teal" },
-    { name: "CC B", keys: ["cc9", "cc10", "cc11", "cc12", "cc13", "cc14", "cc15", "cc16"], color: "blue" },
-    { name: "Motion", keys: ["ccmode", "slew", "timing", "delay", null, null, null, null], color: "green" },
-    { name: "Setup", keys: ["channel", "output", "type", "mute", null, null, null, null], color: "white" },
+    SHAPE,
+    { name: "CC A", keys: lanes(1, "cc"), alt: lanes(1, "ccn") },
+    { name: "CC B", keys: lanes(9, "cc"), alt: lanes(9, "ccn") },
+    { name: "Motion",
+        keys: ["ccmode", "slew", null, null, null, "timing", "random", "channel"],
+        alt: [null, null, null, null, null, "swinggrid", "rate", "output"] },
 ];
-export const MENU_PAGE = { name: "Settings", keys: ["dest", "clock", "bpm", "clockout", null, null, null, null], color: "white" };
+export const SETTINGS_PAGE = {
+    name: "Settings",
+    keys: ["dest", "clock", "bpm", "clockout", "quant", "type", "tail", "phraserate"],
+    alt: [null, null, null, null, null, "mute", "dir", null],
+};
 
-export const TRACK_NAMES = ["KICK", "SNARE", "HAT", "CLAP", "PERC", "TOM", "RIM", "SHAKE",
+export const DEFAULT_NAMES = ["KICK", "SNARE", "HAT", "CLAP", "PERC", "TOM", "RIM", "SHAKE",
     "BASS", "CHORD", "LEAD", "CC 1", "CC 2", "CC 3", "CC 4", "CC 5"];
 
-/* Perform pads, bottom two rows left to right, upper row first.
- * kind: "hold" is momentary, "shot" fires once on press. */
+/* Perform pads, upper row first. "hold" is momentary, "shot" fires once. */
 export const PERFORM = [
     { label: "FILL", move: "fill", value: 1, kind: "hold", color: "orange" },
     { label: "RATCHET 2", move: "ratchet", value: 2, kind: "hold", color: "red" },
@@ -79,11 +120,11 @@ export const PERFORM = [
     { label: "HALF TIME", move: "speed", value: -1, kind: "hold", color: "green" },
     { label: "DOUBLE TIME", move: "speed", value: 1, kind: "hold", color: "green" },
     { label: "REVERSE", move: "reverse", value: 1, kind: "hold", color: "purple" },
-    { label: "THIN", move: "thin", value: 1, kind: "hold", color: "orange" },
+    { label: "ACCENT", move: "accent", value: 1, kind: "hold", color: "orange" },
     { label: "FREEZE 1", move: "freeze", value: 1, kind: "hold", color: "purple" },
     { label: "FREEZE 2", move: "freeze", value: 2, kind: "hold", color: "purple" },
     { label: "FREEZE 4", move: "freeze", value: 4, kind: "hold", color: "purple" },
-    { label: "ACCENT", move: "accent", value: 1, kind: "hold", color: "orange" },
+    { label: "FREEZE 8", move: "freeze", value: 8, kind: "hold", color: "purple" },
     { label: "SOLO", move: "solo", value: 1, kind: "hold", color: "yellow" },
     { label: "RESTART", move: "restart", value: 0, kind: "shot", color: "teal" },
     { label: "ROTATE +1", move: "rotate", value: 1, kind: "shot", color: "teal" },
@@ -91,26 +132,42 @@ export const PERFORM = [
 ];
 
 export function pagesFor(isCC) { return isCC ? CC_PAGES : NOTE_PAGES; }
-
-/* Pages are remembered by name, so a type change or a new focus track keeps
- * you on the same page when it exists there. */
 export function pageIndex(pages, name) {
     const i = pages.findIndex((p) => p.name === name);
     return i < 0 ? 0 : i;
 }
 
-export function paramDefs(snap) {
-    const out = TRACK_PARAMS.slice();
-    for (let i = 0; i < 16; i++) {
-        const num = snap && snap.cn ? snap.cn[i] : 70 + i;
-        out.push({ key: "cc" + (i + 1), name: "CC" + num, type: "int", min: -1, max: 127, div: 1 });
-    }
-    return out.concat(GLOBAL_PARAMS);
-}
+const isLane = (k) => /^cc\d+$/.test(k);
+const isLaneNum = (k) => /^ccn\d+$/.test(k);
+const isRnd = (k) => k.slice(0, 2) === "r.";
 
 export function metaFor(key) {
-    return TRACK_PARAMS.find((p) => p.key === key) || GLOBAL_PARAMS.find((p) => p.key === key) ||
-        (/^cc\d+$/.test(key) ? { key, type: "int", min: -1, max: 127, div: 1 } : null);
+    if (!key) return null;
+    if (isRnd(key)) {
+        const m = metaFor(key.slice(2));
+        return m ? { key, name: m.name, type: "int", min: -100, max: 100, div: 1 } : null;
+    }
+    if (isLane(key)) return { key, name: "CC", type: "int", min: -1, max: 127, div: 1, rnd: 1 };
+    if (isLaneNum(key)) return { key, name: "CC NO", type: "int", min: 0, max: 127, div: 3 };
+    return TRACK_PARAMS.find((p) => p.key === key) || GLOBAL_PARAMS.find((p) => p.key === key) || null;
+}
+
+/* Can this key take a random amount? */
+export function randomKey(key) {
+    const m = metaFor(key);
+    return m && m.rnd ? "r." + key : null;
+}
+
+export function paramDefs(snap) {
+    const out = TRACK_PARAMS.concat(GLOBAL_PARAMS);
+    for (const p of TRACK_PARAMS) if (p.rnd) out.push({ key: "r." + p.key, name: p.name, type: "int", min: -100, max: 100 });
+    for (let i = 0; i < 16; i++) {
+        const num = snap && snap.cn ? snap.cn[i] : 70 + i;
+        out.push({ key: "cc" + (i + 1), name: "CC" + num, type: "int", min: -1, max: 127 });
+        out.push({ key: "ccn" + (i + 1), name: "NO " + (i + 1), type: "int", min: 0, max: 127 });
+        out.push({ key: "r.cc" + (i + 1), name: "CC" + num, type: "int", min: -100, max: 100 });
+    }
+    return out;
 }
 
 /* Snapshot ("ui" JSON from the DSP) -> {key: wire string}. */
@@ -121,63 +178,41 @@ export function valuesFrom(snap, pkeys) {
         const m = metaFor(k);
         const n = snap.p ? snap.p[i] : 0;
         v[k] = m && m.type === "enum" ? m.options[n] : String(n);
+        if (snap.rn) v["r." + k] = String(snap.rn[i] | 0);
     });
-    for (let i = 0; i < 16; i++) v["cc" + (i + 1)] = String(snap.cv ? snap.cv[i] : -1);
+    for (let i = 0; i < 16; i++) {
+        v["cc" + (i + 1)] = String(snap.cv ? snap.cv[i] : -1);
+        v["ccn" + (i + 1)] = String(snap.cn ? snap.cn[i] : 70 + i);
+        v["r.cc" + (i + 1)] = String(snap.cr ? snap.cr[i] : 0);
+    }
     v.dest = DESTS[snap.d | 0];
     v.clock = CLOCKS[snap.ck | 0];
     v.bpm = String(Math.round(snap.bpm || 120));
     v.clockout = snap.co ? "On" : "Off";
+    v.quant = QUANTS[snap.qn === undefined ? 2 : snap.qn | 0];
     return v;
 }
 
+const SIGNED = new Set(["prob", "ramp", "pace", "delay", "pitch", "harmony", "voicing", "range", "accent", "timing"]);
+
 export function displayFor(key, raw) {
     if (raw === undefined || raw === null) return null;
-    if (key === "note") return noteName(parseInt(raw, 10) | 0);
-    if (/^cc\d+$/.test(key) && parseInt(raw, 10) < 0) return "OFF";
-    if ((key === "timing" || key === "delay") && parseInt(raw, 10) > 0) return "+" + raw;
+    const n = parseInt(raw, 10);
+    if (isLane(key) && n < 0) return "OFF";
+    if (key === "repeats" && n >= REPEATS_INF) return "INF";
+    if ((SIGNED.has(key) || isRnd(key)) && n > 0) return "+" + raw;
     return null;
 }
 
-/* Values view: 16 direct choices for the last knob touched. */
-export function choicesFor(key, cur) {
-    const m = metaFor(key);
-    if (!m) return [];
-    if (m.type === "enum") return m.options.slice(0, 16).map((o) => ({ label: o, value: o }));
-    if (key === "note") {
-        const c = parseInt(cur, 10) | 0;
-        const base = Math.max(0, Math.min(112, c - (c % 12)));
-        return Array.from({ length: 16 }, (_, i) => ({ label: noteName(base + i), value: String(base + i) }));
-    }
-    if (key === "steps" || key === "pulses" || key === "fill" || key === "cycles" || key === "channel") {
-        const top = key === "steps" ? 16 : 16;
-        const start = key === "pulses" || key === "fill" ? 0 : 1;
-        return Array.from({ length: top }, (_, i) => ({ label: String(start + i), value: String(start + i) }));
-    }
-    if (key === "rotate") return Array.from({ length: 16 }, (_, i) => ({ label: String(i), value: String(i) }));
-    if (/^cc\d+$/.test(key)) {
-        const vals = [-1].concat(Array.from({ length: 15 }, (_, i) => Math.round(i * 127 / 14)));
-        return vals.map((v) => ({ label: v < 0 ? "OFF" : String(v), value: String(v) }));
-    }
-    if (key === "bpm") return [60, 70, 80, 90, 100, 110, 115, 120, 125, 130, 135, 140, 150, 160, 170, 180]
-        .map((v) => ({ label: String(v), value: String(v) }));
-    const lo = m.min, hi = m.max;
-    return Array.from({ length: 16 }, (_, i) => {
-        const v = Math.round(lo + (hi - lo) * i / 15);
-        return { label: String(v), value: String(v) };
-    });
-}
-
-/* ------------------------------------------------------------ LEDs */
+/* ------------------------------------------------------------ colours */
 
 /* Move pad palette indices, in one place so they can be tuned. */
 export const COL = {
     off: 0, white: 120, dim: 124, red: 1, green: 8, orange: 47, amber: 9,
-    teal: 87, blue: 95, purple: 104, yellow: 13,
+    teal: 87, blue: 95, purple: 104, yellow: 13, pink: 25, grey: 118,
 };
 
-export const PAD_TRACK_TOP = 92;   /* tracks 1-8 on the top row, 9-16 below */
 export const STEP_BASE = 16;
-
 export function trackPadNote(t) { return t < 8 ? 92 + t : 84 + (t - 8); }
 export function padToTrack(note) {
     if (note >= 92 && note <= 99) return note - 92;
@@ -194,58 +229,240 @@ export function slotNote(i) { return i < 8 ? 76 + i : 68 + (i - 8); }
 const isCCBit = (s, t) => (((s.ty | 0) >> t) & 1) === 1;
 const typeColor = (s, t) => (isCCBit(s, t) ? COL.teal : COL.orange);
 
-/* Desired colour of every pad and step LED. */
+/* ------------------------------------------------------- the 16 value pads */
+
+/* Which thing the bottom pads show right now. Held layers win over the
+ * knob under your finger. */
+export function padMode(st) {
+    if (st.layer === "pattern") return "pattern";
+    if (st.layer === "cycles") return "cycles";
+    if (st.layer === "perform") return "perform";
+    if (st.padKey === "cycles") return "cycles";
+    return "param";
+}
+
+/* Keyboard layout: white keys along the lower row, black keys above and
+ * between them, octave buttons at the right end of each row. */
+const KB_WHITE = [0, 2, 4, 5, 7, 9, 11];
+const KB_BLACK = { 1: 1, 2: 3, 4: 6, 5: 8, 6: 10 };
+export function keyboardNote(slot) {
+    if (slot >= 8 && slot <= 14) return KB_WHITE[slot - 8];
+    if (slot in KB_BLACK) return KB_BLACK[slot];
+    return -1;
+}
+
+const DIV_SLOTS = { 0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 10: 7, 11: 8, 12: 9, 13: 10, 14: 11, 7: 12, 8: 13, 9: 14 };
+const COARSE = [-1, -0.5, -0.25, 0, 0.25, 0.5, 1];
+const NUDGE = [-5, -2, -1, null, 1, 2, 5];
+
+const set = (key, value, label) => ({ k: "set", key, value: String(value), label });
+
+/* What each of the 16 pads does for the current parameter.
+ * Returns { title, pads: [{ c, act }] } with act null for an unused pad. */
+export function padModel(st) {
+    const mode = padMode(st);
+    const s = st.snap || {};
+    const blink = Math.floor((st.now || 0) / 200) % 2 === 0;
+    const pads = Array.from({ length: 16 }, () => ({ c: COL.off, act: null }));
+    const v = st.values || {};
+
+    if (mode === "pattern") {
+        for (let i = 0; i < 16; i++) {
+            const filled = st.patterns && st.patterns[i];
+            let c = filled ? COL.blue : COL.dim;
+            if (st.current === i) c = COL.white;
+            if (st.queued === i) c = blink ? COL.green : COL.off;
+            pads[i] = { c, act: { k: "pattern", i } };
+        }
+        return { title: "PATTERNS", pads };
+    }
+    if (mode === "perform") {
+        for (let i = 0; i < 16; i++) {
+            const p = PERFORM[i];
+            const held = st.perfHeld && st.perfHeld[i], latched = st.latched && st.latched[i];
+            pads[i] = { c: held || (latched && blink) ? COL.white : COL[p.color], act: { k: "perf", i } };
+        }
+        return { title: "PERFORM", pads };
+    }
+    if (mode === "cycles") {
+        const n = parseInt(v.cycles, 10) || 1;
+        const em = s.em | 0, ce = s.ce | 0;
+        for (let i = 0; i < 16; i++) {
+            let c = i < n ? COL.grey : COL.off;
+            if ((ce >> i) & 1) c = i < n ? COL.red : COL.dim;
+            if (s.r && !em && i === (s.pc | 0)) c = COL.white;
+            if ((em >> i) & 1) c = blink ? COL.white : COL.red;
+            pads[i] = { c, act: { k: "cycle", i } };
+        }
+        return { title: "CYCLES", pads };
+    }
+
+    const key = st.padKey;
+    const m = metaFor(key);
+    if (!m) return { title: "", pads };
+    const cur = v[key];
+    const curN = parseInt(cur, 10);
+    const title = m.name.toUpperCase();
+    const page = st.padPage | 0;
+
+    if (key === "pitch" || key === "root") {
+        const scale = SCALE_DEG[Math.max(0, SCALES.indexOf(v.scale))];
+        const root = Math.max(0, ROOTS.indexOf(v.root));
+        const oct = st.kbOct | 0;
+        const pool = new Set(s.po || []);
+        for (let i = 0; i < 16; i++) {
+            const pc = keyboardNote(i);
+            if (pc < 0) continue;
+            const black = i < 8;
+            if (key === "root") {
+                pads[i] = { c: pc === root ? COL.white : (black ? COL.blue : COL.grey), act: set("root", ROOTS[pc], "ROOT " + ROOTS[pc]) };
+                continue;
+            }
+            const note = 12 * (oct + 2) + pc;
+            const inScale = scale.includes(((pc - root) % 12 + 12) % 12);
+            if (note > 127) continue;
+            let c = inScale ? (black ? COL.blue : COL.grey) : COL.off;
+            if (pool.has(note)) c = COL.orange;
+            pads[i] = { c, act: inScale || pool.has(note) ? { k: "pool", note } : null };
+        }
+        if (key === "pitch") {
+            pads[7] = { c: oct > 3 ? COL.white : COL.pink, act: { k: "oct", d: 1 } };
+            pads[15] = { c: oct < 3 ? COL.white : COL.pink, act: { k: "oct", d: -1 } };
+        }
+        return { title: key === "pitch" ? "NOTES C" + oct : "ROOT", pads };
+    }
+
+    if (key === "division" || key === "time" || key === "rate") {
+        for (const slot in DIV_SLOTS) {
+            const idx = DIV_SLOTS[slot];
+            const c = DIVISIONS[idx] === cur ? COL.white : (idx < 7 ? COL.grey : (idx < 12 ? COL.blue : COL.purple));
+            pads[slot] = { c, act: set(key, DIVISIONS[idx], m.name + " " + DIVISIONS[idx]) };
+        }
+        return { title, pads };
+    }
+
+    if (key === "style") {
+        [0, 1, 2, 8, 9, 10].forEach((slot, i) => {
+            pads[slot] = { c: STYLES[i] === cur ? COL.white : COL.green, act: set("style", STYLES[i], STYLES[i]) };
+        });
+        dirPads(pads, v);
+        return { title, pads };
+    }
+    if (key === "phrase" || key === "groove") {
+        const opts = key === "phrase" ? PHRASES : GROOVES;
+        [0, 1, 2, 3, 8, 9, 10, 11].forEach((slot, i) => {
+            pads[slot] = { c: opts[i] === cur ? COL.white : COL.green, act: set(key, opts[i], opts[i]) };
+        });
+        if (key === "phrase") ratePads(pads, v);
+        return { title, pads };
+    }
+
+    if (m.type === "enum") {
+        m.options.slice(0, 16).forEach((o, i) => {
+            pads[i] = { c: o === cur ? COL.white : COL.blue, act: set(key, o, m.name + " " + o) };
+        });
+        return { title, pads };
+    }
+
+    if (key === "repeats") {
+        const slots = [0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14];
+        slots.forEach((slot, i) => {
+            const n = page * 14 + i;
+            if (n >= REPEATS_INF) return;
+            pads[slot] = { c: n === curN ? COL.white : COL.orange, act: set(key, n, "REPEATS " + n) };
+        });
+        pads[15] = { c: curN >= REPEATS_INF ? COL.white : COL.blue, act: set(key, REPEATS_INF, "REPEATS INF") };
+        pads[7] = { c: v.tail === "Tail" ? COL.white : COL.pink, act: set("tail", v.tail === "Tail" ? "Choke" : "Tail", v.tail === "Tail" ? "CHOKE" : "TAIL") };
+        return { title, pads };
+    }
+
+    const span = m.max - m.min;
+    if (m.min < 0) {
+        /* Bipolar: lower row jumps to coarse amounts with zero in the
+         * middle, upper row nudges, as on the T-1. */
+        COARSE.forEach((f, i) => {
+            const val = Math.round(f * m.max);
+            pads[8 + i] = { c: val === curN ? COL.white : (f === 0 ? COL.grey : COL.orange), act: set(key, val, m.name + " " + val) };
+        });
+        NUDGE.forEach((d, i) => {
+            if (d === null) pads[i] = { c: COL.grey, act: set(key, 0, m.name + " 0") };
+            else pads[i] = { c: COL.blue, act: { k: "nudge", key, d } };
+        });
+        if (key === "voicing") dirPads(pads, v);
+        if (key === "range") ratePads(pads, v);
+        if (key === "timing") {
+            pads[7] = { c: v.swinggrid === "x2" ? COL.white : COL.pink, act: set("swinggrid", v.swinggrid === "x2" ? "x1" : "x2", "GRID " + (v.swinggrid === "x2" ? "X1" : "X2")) };
+            pads[15] = { c: v.swinggrid === "x4" ? COL.white : COL.pink, act: set("swinggrid", v.swinggrid === "x4" ? "x1" : "x4", "GRID " + (v.swinggrid === "x4" ? "X1" : "X4")) };
+        }
+        return { title, pads };
+    }
+
+    /* Unipolar. Short ranges get one pad per value, paged with +/-. */
+    let vals;
+    if (isLane(key)) vals = [-1].concat(Array.from({ length: 15 }, (_, i) => Math.round(i * 127 / 14)));
+    else if (key === "bpm") vals = [60, 70, 80, 90, 100, 110, 115, 120, 125, 130, 135, 140, 150, 160, 170, 180];
+    else if (span <= 16) vals = Array.from({ length: Math.min(16, span + 1) }, (_, i) => m.min + i);
+    else if (span <= 64) vals = Array.from({ length: 16 }, (_, i) => m.min + page * 16 + i).filter((x) => x <= m.max);
+    else vals = Array.from({ length: 16 }, (_, i) => Math.round(m.min + span * (i + 1) / 16));
+    vals.forEach((val, i) => {
+        const lab = isLane(key) && val < 0 ? "OFF" : String(val);
+        pads[i] = { c: val === curN ? COL.white : COL.blue, act: set(key, val, m.name + " " + lab) };
+    });
+    return { title, pads };
+}
+
+function dirPads(pads, v) {
+    pads[7] = { c: v.dir === "Up" ? COL.white : COL.pink, act: set("dir", "Up", "DIRECTION UP") };
+    pads[15] = { c: v.dir === "Down" ? COL.white : COL.pink, act: set("dir", "Down", "DIRECTION DOWN") };
+}
+function ratePads(pads, v) {
+    pads[7] = { c: v.phraserate === "x2" ? COL.white : COL.pink, act: set("phraserate", v.phraserate === "x2" ? "x1" : "x2", "PHRASE " + (v.phraserate === "x2" ? "X1" : "X2")) };
+    pads[15] = { c: v.phraserate === "/2" ? COL.white : COL.pink, act: set("phraserate", v.phraserate === "/2" ? "x1" : "/2", "PHRASE " + (v.phraserate === "/2" ? "X1" : "/2")) };
+}
+
+/* How many pad pages a parameter has (for the +/- buttons). */
+export function padPages(key) {
+    const m = metaFor(key);
+    if (!m || m.type === "enum" || m.min < 0) return 1;
+    if (key === "repeats") return 4;
+    const span = m.max - m.min;
+    return span > 16 && span <= 64 ? Math.ceil((span + 1) / 16) : 1;
+}
+
+/* ------------------------------------------------------------ LEDs */
+
 export function ledFrame(st) {
     const out = {};
     const s = st.snap || {};
     const mu = s.mu | 0, pf = s.pf | 0;
-    const blink = Math.floor((st.now || 0) / 250) % 2 === 0;
+    const now = st.now || 0;
+    const blink = Math.floor(now / 200) % 2 === 0;
     for (let t = 0; t < 16; t++) {
         const muted = (mu >> t) & 1, soloed = (pf >> (16 + t)) & 1;
-        const hit = st.flashUntil && st.flashUntil[t] > (st.now || 0);
+        const hit = st.flashUntil && st.flashUntil[t] > now;
         let c = muted || soloed ? COL.dim : typeColor(s, t);
-        if (muted && soloed) c = COL.off;
-        if (t === st.focus) c = hit ? typeColor(s, t) : COL.white;
+        if (t === st.focus) c = hit && !muted ? typeColor(s, t) : COL.white;
         else if (hit && !muted && !soloed) c = COL.white;
+        if (st.held && st.held.has(t) && t !== st.focus) c = COL.white;
+        if (((st.mutePend | 0) >> t) & 1) c = blink ? COL.red : COL.off;
         if (st.copySrc === t && blink) c = COL.off;
         out[trackPadNote(t)] = c;
     }
 
-    for (let i = 0; i < 16; i++) {
-        let c = COL.off;
-        if (st.view === 0) {
-            const ch = st.valuesKey ? choicesFor(st.valuesKey, st.values[st.valuesKey]) : [];
-            if (i < ch.length) c = ch[i].value === String(st.values[st.valuesKey]) ? COL.white : COL.blue;
-        } else if (st.view === 1) {
-            const p = PERFORM[i];
-            const on = (st.perfHeld && st.perfHeld[i]) || (st.latched && st.latched[i]);
-            c = on ? (st.latched && st.latched[i] && !blink ? COL[p.color] : COL.white) : COL[p.color];
-        } else if (st.view === 2) {
-            const muted = (mu >> i) & 1;
-            c = muted ? COL.dim : typeColor(s, i);
-            if (i === st.focus && !muted) c = COL.white;
-            if ((st.soloMask >> i) & 1) c = COL.yellow;
-        } else if (st.view === 3) {
-            const p = st.patterns || [];
-            if (st.queued === i) c = blink ? COL.green : COL.off;
-            else if (st.current === i) c = COL.white;
-            else if (p[i]) c = COL.blue;
-            else c = COL.dim;
-        }
-        out[slotNote(i)] = c;
-    }
+    const model = padModel(st);
+    for (let i = 0; i < 16; i++) out[slotNote(i)] = model.pads[i].c;
 
-    /* Step row: the focus track, current page of 16. */
-    const steps = parseInt(st.values.steps, 10) || 16;
+    /* Step row: the cycle being edited, else the one playing. */
+    const steps = s.sn | 0 || parseInt((st.values || {}).steps, 10) || 16;
     let hits = 0n;
     try { hits = BigInt("0x" + (s.h || "0")); } catch (e) { hits = 0n; }
     const cur = s.st ? s.st[st.focus] : -1;
     for (let i = 0; i < 16; i++) {
-        const idx = st.stepPage * 16 + i;
+        const idx = (st.stepPage | 0) * 16 + i;
         let c = COL.off;
         if (idx < steps) {
             const on = (hits >> BigInt(idx)) & 1n;
-            c = on ? typeColor(s, st.focus) : COL.dim;
+            c = on ? ((s.em | 0) ? COL.red : typeColor(s, st.focus)) : COL.dim;
             if (s.r && idx === cur) c = on ? COL.white : COL.green;
         }
         out[STEP_BASE + i] = c;
@@ -257,24 +474,68 @@ export function ledFrame(st) {
 
 export function currentPages(st) {
     const s = st.snap || {};
-    return st.menu ? [MENU_PAGE] : pagesFor(isCCBit(s, st.focus));
+    return st.settings ? [SETTINGS_PAGE] : pagesFor(isCCBit(s, st.focus));
+}
+
+export function currentPage(st) {
+    const pages = currentPages(st);
+    return st.settings ? SETTINGS_PAGE : pages[pageIndex(pages, st.pageName)];
+}
+
+/* The eight keys under the knobs right now: Shift shows the second layer,
+ * holding Random shows the random amounts of whichever layer is up. */
+export function knobKeys(st) {
+    const pg = currentPage(st);
+    let keys = st.shift ? pg.alt : pg.keys;
+    if (st.randomHeld) keys = keys.map((k) => (k ? randomKey(k) : null));
+    return keys;
+}
+
+export function trackName(st, t) {
+    const s = st.snap || {};
+    return ((s.nm && s.nm[t]) || DEFAULT_NAMES[t]).toUpperCase();
+}
+
+function cut(str, n) { str = String(str); return str.length > n ? str.slice(0, n) : str; }
+
+export function footerFor(st) {
+    const s = st.snap || {};
+    const now = st.now || 0;
+    if (st.warn) return [["!", st.warn]];
+    if (st.toast && st.toast.until > now) return [[st.toast.tag, st.toast.text]];
+    const out = [];
+    if (s.tmp) out.push(["TEMP", ""]);
+    if (s.em | 0) {
+        const ids = []; for (let c = 0; c < 16; c++) if (((s.em | 0) >> c) & 1) ids.push(c + 1);
+        out.push(["EDIT", "CYC " + cut(ids.join("+"), 8)]);
+        return out;
+    }
+    if (st.queued >= 0 && st.queued !== undefined && st.queued !== null) out.push(["NEXT", "P" + (st.queued + 1)]);
+    else if (st.current >= 0 && st.patterns && st.patterns[st.current]) out.push(["P" + (st.current + 1), cut(st.patterns[st.current].name || "", 7).toUpperCase()]);
+    const n = parseInt((st.values || {}).cycles, 10) || 1;
+    if (!s.tmp) out.push(["C", ((s.pc | 0) + 1) + "/" + n]);
+    out.push(["", s.ck === 2 ? "EXT" : String(Math.round(s.bpm || 120))]);
+    return out;
 }
 
 /* Arguments for renderPageMovy. lib = { PAGE_KNOBS, buildMetaIndex }. */
 export function pageOptions(st, lib) {
     const s = st.snap || {};
     const pages = currentPages(st);
-    const pi = st.menu ? 0 : pageIndex(pages, st.pageName);
+    const pi = st.settings ? 0 : pageIndex(pages, st.pageName);
     const pg = pages[pi];
-    const metaIndex = lib.buildMetaIndex({ chainParams: paramDefs(s) });
-    let title = st.menu ? "E-1" : "T" + (st.focus + 1) + " " + TRACK_NAMES[st.focus];
-    if (!st.menu && st.held && st.held.size > 1) title = st.held.size + " TRACKS";
+    const keys = knobKeys(st);
+    let title = st.settings ? "E-1" : "T" + (st.focus + 1) + " " + cut(trackName(st, st.focus), 8);
+    if (!st.settings && st.held && st.held.size > 1) title = st.held.size + " TRACKS";
+    let label = pg.name;
+    if (st.randomHeld) label = "Random";
+    else if (st.shift) label = pg.name + " 2";
     return {
-        page: { kind: lib.PAGE_KNOBS, name: pg.name, level: "root", keys: pg.keys },
-        metaIndex,
+        page: { kind: lib.PAGE_KNOBS, name: label, level: "root", keys },
+        metaIndex: lib.buildMetaIndex({ chainParams: paramDefs(s) }),
         values: st.values,
         title,
-        pageLabel: pg.name,
+        pageLabel: label,
         pageIndex: pi,
         pageCount: pages.length,
         touched: st.touched,
@@ -284,52 +545,28 @@ export function pageOptions(st, lib) {
     };
 }
 
-export function footerFor(st) {
-    const s = st.snap || {};
-    if (st.warn) return [["!", st.warn]];
-    const out = [];
-    if (s.tmp) out.push(["TEMP", "HELD"]);
-    if (st.queued >= 0 && st.queued !== undefined && st.queued !== null) out.push(["NEXT", "P" + (st.queued + 1)]);
-    const clk = s.ck === 1 ? String(Math.round(s.bpm || 120)) : (s.ck === 2 ? "PC" : "MOVE");
-    out.push(["CLK", clk]);
-    out.push(["OUT", ["MOVE", "PC", "BOTH"][s.d | 0]]);
-    return out;
-}
-
-/* A banner across the middle of the screen: page changes, perform moves,
- * pattern actions. lib.bigPrint/bigWidth draw the 6x12 Tamzen face. */
-export function drawBanner(ctx, st, lib) {
-    const b = st.banner;
-    if (!b || !(b.until > (st.now || 0))) return;
-    const big = String(b.text || "").toUpperCase();
-    const small = String(b.sub || "").toUpperCase();
-    const bw1 = lib.bigWidth ? lib.bigWidth(big) : big.length * 6;
-    /* Twice the size when it fits, so it reads at arm's length. */
-    const scale = lib.bigPrint && bw1 * 2 <= 116 ? 2 : 1;
-    const bw = bw1 * scale, bh = 7 * scale;
-    const sw = ctx.textWidth ? ctx.textWidth(small) : small.length * 6;
-    const w = Math.min(126, Math.max(bw, sw) + 14);
-    const dots = b.dots ? 5 : 0;
-    const h = 8 + bh + (small ? 11 : 0) + dots + 2;
-    const x = Math.floor((128 - w) / 2), y = Math.max(0, Math.floor((64 - h) / 2));
-    ctx.fillRect(x - 1, y - 1, w + 2, h + 2, 0);
-    ctx.fillRect(x, y, w, h, 1);
-    ctx.fillRect(x + 1, y + 1, w - 2, h - 2, 0);
-    const bx = Math.floor(64 - bw / 2), by = y + 5;
-    if (lib.bigPrint) {
-        const sc = scale === 1 ? ctx : {
-            fillRect: (px, py, pw, ph, c) => ctx.fillRect(bx + (px - bx) * 2, by + (py - by) * 2, pw * 2, ph * 2, c),
-        };
-        lib.bigPrint(sc, bx, by - (scale === 2 ? 0 : 0), big, 1);
-    } else ctx.print(bx, by, big, 1);
-    let cy = by + bh + 4;
-    if (small) { ctx.print(Math.floor(64 - sw / 2), cy, small, 1); cy += 11; }
-    if (b.dots) {
-        const n = b.dots[1], cur = b.dots[0];
-        const dx = Math.floor(64 - (n * 6) / 2);
-        for (let i = 0; i < n; i++) {
-            if (i === cur) ctx.fillRect(dx + i * 6, cy, 4, 3, 1);
-            else ctx.fillRect(dx + i * 6 + 1, cy + 1, 2, 1, 1);
-        }
+/* While Pattern is held: all 16 slots with their names. */
+export function drawPatternGrid(ctx, st) {
+    const now = st.now || 0;
+    const blink = Math.floor(now / 200) % 2 === 0;
+    ctx.fillRect(0, 0, 128, 64, 0);
+    const head = "PATTERNS";
+    ctx.print(1, 1, head, 1);
+    const sn = cut((st.setName || "").toUpperCase(), 11);
+    ctx.print(127 - ctx.textWidth(sn), 1, sn, 1);
+    ctx.fillRect(0, 9, 128, 1, 1);
+    for (let i = 0; i < 16; i++) {
+        const col = i % 4;
+        const row = Math.floor(i / 4);
+        const x = col * 32, y = 11 + row * 11;
+        const p = st.patterns && st.patterns[i];
+        const cur = st.current === i, queued = st.queued === i;
+        const txt = p ? cut((p.name || "P" + (i + 1)).toUpperCase(), 5) : "-";
+        if (cur) ctx.fillRect(x, y, 31, 10, 1);
+        else if (queued && blink) { ctx.fillRect(x, y, 31, 1, 1); ctx.fillRect(x, y + 9, 31, 1, 1); ctx.fillRect(x, y, 1, 10, 1); ctx.fillRect(x + 30, y, 1, 10, 1); }
+        ctx.print(x + 2, y + 2, txt, cur ? 0 : 1);
     }
+    const foot = st.toast && st.toast.until > now ? st.toast.tag + " " + st.toast.text
+        : (st.shift ? "TAP SAVES HERE" : "SHIFT+PAD SAVES");
+    ctx.print(1, 56, cut(foot, 21), 1);
 }

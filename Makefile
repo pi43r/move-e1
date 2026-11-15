@@ -3,10 +3,10 @@ CFLAGS = -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -Isr
 ENGINE = src/engine/e1_engine.c
 
 .PHONY: test preview clean
-test: build/test_engine build/test_plugin build/test_lite
+test: build/test_engine build/test_plugin
 	./build/test_engine
 	./build/test_plugin
-	./build/test_lite
+	node tests/test_library.mjs
 
 build/test_%: tests/test_%.c $(ENGINE) src/engine/e1_engine.h $(wildcard src/*/dsp/*.c)
 	@mkdir -p build

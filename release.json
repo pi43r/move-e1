@@ -1,6 +1,5 @@
 {
   "modules": {
-    "e1": { "version": "0.1.0", "download_url": "https://github.com/pi43r/move-e1/releases/download/v0.1.0/e1-module.tar.gz" },
-    "e1_lite": { "version": "0.1.0", "download_url": "https://github.com/pi43r/move-e1/releases/download/v0.1.0/e1_lite-module.tar.gz" }
+    "e1": { "version": "0.1.0", "download_url": "https://github.com/pi43r/move-e1/releases/download/v0.1.0/e1-module.tar.gz" }
   }
 }

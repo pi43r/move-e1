@@ -3,7 +3,6 @@
  */
 #include "e1_engine.h"
 
-#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,70 +20,186 @@ const int e1_division_ticks[E1_DIVISIONS] = {
     128, 64, 32, 16, 8,
     144, 72, 36
 };
-
-const char *const e1_length_names[E1_LENGTHS] = {
-    "Off", "1", "2", "3", "4", "5", "6", "7", "8", "16"
-};
 const int e1_length_bars[E1_LENGTHS] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 16 };
 
+static const char *const LENGTH_NAMES[] = { "Off", "1", "2", "3", "4", "5", "6", "7", "8", "16" };
 static const char *const TYPE_NAMES[]   = { "Note", "CC" };
 static const char *const OUT_NAMES[]    = { "Global", "Move", "Computer", "Both" };
 static const char *const DEST_NAMES[]   = { "Move", "Computer", "Both" };
-static const char *const NMODE_NAMES[]  = { "Drum", "Melodic" };
 static const char *const CCMODE_NAMES[] = { "Pulse", "Change", "Glide" };
 static const char *const ONOFF_NAMES[]  = { "Off", "On" };
+static const char *const STYLE_NAMES[]  = { "PolyFix", "PolyRamp", "PolyClimb", "MonoFix", "MonoRamp", "MonoClimb" };
+static const char *const PHRASE_NAMES[] = { "Cad1", "Cad2", "Cad3", "Cad4", "Saw", "Tri", "Sine", "Pulse" };
+static const char *const SCALE_NAMES[]  = { "Chrom", "Major", "Minor", "Penta", "Hira", "Iwato", "Tetra", "Dorian" };
+static const char *const ROOT_NAMES[]   = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+static const char *const GROOVE_NAMES[] = { "Agogo", "Congas", "Timbal", "Bongo", "Saw", "Tri", "Sine", "Pulse" };
+static const char *const GRID_NAMES[]   = { "x1", "x2", "x4" };
+static const char *const DIR_NAMES[]    = { "Up", "Down" };
+static const char *const TAIL_NAMES[]   = { "Choke", "Tail" };
+static const char *const PRATE_NAMES[]  = { "x1", "x2", "/2" };
+
+static const int8_t SCALE_DEG[8][12] = {
+    { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 },
+    { 0, 2, 4, 5, 7, 9, 11 },
+    { 0, 2, 3, 5, 7, 8, 10 },
+    { 0, 2, 4, 7, 9 },
+    { 0, 2, 3, 7, 8 },
+    { 0, 1, 5, 6, 10 },
+    { 0, 4, 7, 10 },
+    { 0, 2, 3, 5, 7, 9, 10 },
+};
+static const int8_t SCALE_LEN[8] = { 12, 7, 7, 5, 5, 5, 4, 7 };
+
+/* Velocity shapes, one value per step of a 16-step bar, in tenths (-10..10). */
+static const int8_t GROOVE_SHAPE[4][16] = {
+    { 10, -4, 0, -6,  6, -4, 2, -6,  10, -4, 0, -6,  6, -2, 8, -4 },   /* Agogo */
+    { 8, -6, -2, 6,  -4, 4, 10, -6,  6, -6, -2, 8,  -4, 2, 10, -2 },   /* Congas */
+    { 10, 0, -8, 4,  0, -8, 8, 0,  -8, 6, 0, -6,  10, -4, 4, -8 },     /* Timbales */
+    { 6, 2, -6, 10,  -6, 2, 6, -8,  4, 10, -6, 2,  -4, 8, -8, 2 },     /* Bongo */
+};
+
+/* Phrase cadences: eight segments per phrase, as tenths of Range. */
+static const int8_t CADENCE[4][8] = {
+    { 0, 0, 5, 5, 10, 10, 5, 5 },
+    { 0, 5, 0, 10, 0, 5, 10, 5 },
+    { 0, 0, 0, 10, 0, 0, 5, 10 },
+    { 10, 7, 5, 2, 0, 2, 5, 7 },
+};
+
+/* ------------------------------------------------------------ parameters */
+
+enum { F_CYC = 1, F_RC = 2, F_RR = 4 };   /* lockable; random per cycle; random per rate step */
+
+typedef struct {
+    const char *key;
+    int16_t lo, hi, def;
+    const char *const *names;
+    uint8_t flags;
+    uint8_t span;          /* how far a random amount of 100 can move it */
+} pdesc_t;
+
+static const pdesc_t P[E1_NP] = {
+    [E1_P_TYPE]       = { "type",       0, 1, 0,     TYPE_NAMES,   0, 0 },
+    [E1_P_STEPS]      = { "steps",      1, 64, 16,   NULL,         F_CYC | F_RC, 8 },
+    [E1_P_PULSES]     = { "pulses",     0, 64, 4,    NULL,         F_CYC | F_RC, 6 },
+    [E1_P_ROTATE]     = { "rotate",     0, 63, 0,    NULL,         F_CYC | F_RC, 8 },
+    [E1_P_DIVISION]   = { "division",   0, E1_DIVISIONS - 1, 4, e1_division_names, F_CYC, 0 },
+    [E1_P_LENGTH]     = { "length",     0, E1_LENGTHS - 1, 0,   LENGTH_NAMES, 0, 0 },
+    [E1_P_CYCLES]     = { "cycles",     1, 16, 4,    NULL,         0, 0 },
+    [E1_P_VELOCITY]   = { "velocity",   1, 127, 100, NULL,         F_CYC | F_RR, 64 },
+    [E1_P_PROB]       = { "prob",       -100, 100, 0, NULL,        F_CYC | F_RR, 100 },
+    [E1_P_SUSTAIN]    = { "sustain",    1, 100, 25,  NULL,         F_CYC | F_RR, 50 },
+    [E1_P_REPEATS]    = { "repeats",    0, E1_REPEATS_INF, 0, NULL, F_CYC | F_RR, 6 },
+    [E1_P_TIME]       = { "time",       0, E1_DIVISIONS - 1, 5, e1_division_names, F_CYC, 0 },
+    [E1_P_RAMP]       = { "ramp",       -100, 100, 0, NULL,        F_CYC, 0 },
+    [E1_P_PACE]       = { "pace",       -100, 100, 0, NULL,        F_CYC, 0 },
+    [E1_P_FILL]       = { "fill",       0, 16, 2,    NULL,         F_CYC, 0 },
+    [E1_P_DELAY]      = { "delay",      -50, 50, 0,  NULL,         0, 0 },
+    [E1_P_PITCH]      = { "pitch",      -36, 36, 0,  NULL,         F_CYC | F_RC, 7 },
+    [E1_P_HARMONY]    = { "harmony",    -16, 16, 0,  NULL,         F_CYC | F_RC, 4 },
+    [E1_P_VOICING]    = { "voicing",    -16, 16, 0,  NULL,         F_CYC | F_RR, 4 },
+    [E1_P_STYLE]      = { "style",      0, 5, 0,     STYLE_NAMES,  F_CYC, 0 },
+    [E1_P_RANGE]      = { "range",      -16, 16, 0,  NULL,         F_CYC | F_RR, 7 },
+    [E1_P_PHRASE]     = { "phrase",     0, 7, 0,     PHRASE_NAMES, F_CYC, 0 },
+    [E1_P_SCALE]      = { "scale",      0, 7, 0,     SCALE_NAMES,  F_CYC, 0 },
+    [E1_P_ROOT]       = { "root",       0, 11, 0,    ROOT_NAMES,   F_CYC, 0 },
+    [E1_P_ACCENT]     = { "accent",     -100, 100, 0, NULL,        F_CYC | F_RR, 100 },
+    [E1_P_GROOVE]     = { "groove",     0, 7, 0,     GROOVE_NAMES, F_CYC, 0 },
+    [E1_P_TIMING]     = { "timing",     -50, 50, 0,  NULL,         F_CYC | F_RR, 50 },
+    [E1_P_SWINGGRID]  = { "swinggrid",  0, 2, 0,     GRID_NAMES,   0, 0 },
+    [E1_P_RANDOM]     = { "random",     0, 100, 100, NULL,         0, 0 },
+    [E1_P_RATE]       = { "rate",       0, E1_DIVISIONS - 1, 4, e1_division_names, 0, 0 },
+    [E1_P_CHANNEL]    = { "channel",    1, 16, 1,    NULL,         0, 0 },
+    [E1_P_OUTPUT]     = { "output",     0, 3, 0,     OUT_NAMES,    0, 0 },
+    [E1_P_MUTE]       = { "mute",       0, 1, 0,     ONOFF_NAMES,  0, 0 },
+    [E1_P_DIR]        = { "dir",        0, 1, 0,     DIR_NAMES,    F_CYC, 0 },
+    [E1_P_TAIL]       = { "tail",       0, 1, 0,     TAIL_NAMES,   0, 0 },
+    [E1_P_PHRASERATE] = { "phraserate", 0, 2, 0,     PRATE_NAMES,  0, 0 },
+    [E1_P_CCMODE]     = { "ccmode",     0, 2, 0,     CCMODE_NAMES, 0, 0 },
+    [E1_P_SLEW]       = { "slew",       0, 100, 0,   NULL,         0, 0 },
+};
+
+int e1_param_count(void) { return E1_NP; }
+const char *e1_param_key(int i) { return (i >= 0 && i < E1_NP) ? P[i].key : ""; }
+
+static int find_param(const char *key)
+{
+    for (int i = 0; i < E1_NP; i++) if (strcmp(P[i].key, key) == 0) return i;
+    return -1;
+}
 
 /* ------------------------------------------------------------- utilities */
 
 static int clampi(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
-int e1_chance(uint32_t seed, int track, int64_t k)
+static uint64_t mix(uint64_t x)
 {
-    uint64_t x = ((uint64_t)seed << 32) ^ ((uint64_t)(uint32_t)track * 0x9E3779B97F4A7C15ULL) ^ (uint64_t)k;
     x ^= x >> 33; x *= 0xff51afd7ed558ccdULL;
     x ^= x >> 33; x *= 0xc4ceb9fe1a85ec53ULL;
     x ^= x >> 33;
-    return (int)(x % 100ULL);
+    return x;
 }
 
+int e1_chance(uint32_t seed, int track, int64_t k)
+{
+    return (int)(mix(((uint64_t)seed << 32) ^ ((uint64_t)(uint32_t)track * 0x9E3779B97F4A7C15ULL) ^ (uint64_t)k) % 100ULL);
+}
+
+static int lowest_bit(uint32_t m) { for (int i = 0; i < 16; i++) if (m & (1u << i)) return i; return -1; }
+
+/* The value parameter p has in cycle c. `ridx` is the random step for
+ * rate-driven random, or -1 to leave that out (used for display). */
+static int eff(const e1_engine_t *e, int ti, int p, int c, int ridx)
+{
+    const e1_track_t *t = &e->t[ti];
+    const pdesc_t *d = &P[p];
+    int v = t->v[p];
+    if ((d->flags & F_CYC) && c >= 0 && c < E1_CYCLES) v += t->cyc[c][p];
+    if (t->rnd[p] && t->v[E1_P_RANDOM] > 0) {
+        int idx = (d->flags & F_RC) ? c : ((d->flags & F_RR) ? ridx : -1);
+        if (idx >= 0) {
+            uint64_t h = mix(((uint64_t)e->seed << 32) ^ ((uint64_t)(ti * 64 + p) << 16) ^ (uint64_t)idx);
+            if ((int)(h % 100ULL) < t->v[E1_P_RANDOM]) {
+                double u = (double)((h >> 8) % 1001ULL) / 1000.0;
+                v += (int)lrint((double)t->rnd[p] / 100.0 * (double)d->span * u);
+            }
+        }
+    }
+    return clampi(v, d->lo, d->hi);
+}
+
+static int div_ticks(int idx) { return e1_division_ticks[clampi(idx, 0, E1_DIVISIONS - 1)]; }
+
 /* ------------------------------------------------------------- defaults */
+
+static const char *const DEFAULT_NAMES[E1_TRACKS] = {
+    "KICK", "SNARE", "HAT", "CLAP", "PERC", "TOM", "RIM", "SHAKE",
+    "BASS", "CHORD", "LEAD", "CC 1", "CC 2", "CC 3", "CC 4", "CC 5"
+};
+
+static void runtime_reset(e1_track_t *t)
+{
+    memset((char *)t + E1_TRACK_STORED_BYTES, 0, sizeof(*t) - E1_TRACK_STORED_BYTES);
+    t->cur_step = -1;
+    for (int i = 0; i < E1_CC_LANES; i++) { t->cc_sent[i] = -1; t->cc_target[i] = -1; }
+}
 
 void e1_track_defaults(e1_track_t *t, int index)
 {
     memset(t, 0, sizeof(*t));
-    t->type = E1_TYPE_NOTE;
-    t->steps = 16;
-    t->pulses = 4;
-    t->rotate = 0;
-    t->division = 4;          /* 1/16 */
-    t->length = 0;            /* free-running, so unequal Steps make polymeters */
-    t->cycles = 1;
-    t->prob = 100;
-    t->fill = 0;
-    t->channel = 0;
-    t->output = E1_OUT_GLOBAL;
-    t->note_mode = E1_NOTE_DRUM;
-    t->note = (uint8_t)clampi(36 + index, 0, 127);
-    t->velocity = 100;
-    t->sustain = 25;
-    t->timing = 0;
-    t->delay = 0;
-    t->muted = 0;
+    for (int p = 0; p < E1_NP; p++) t->v[p] = P[p].def;
+    t->pool[0] = (uint8_t)clampi(36 + index, 0, 127);
+    t->pool_n = 1;
     for (int i = 0; i < E1_CC_LANES; i++) {
         t->cc_val[i] = -1;
         t->cc_num[i] = (uint8_t)(i < 14 ? 70 + i : (i == 14 ? 1 : 74));
-        t->cc_sent[i] = -1;
-        t->cc_target[i] = -1;
-        t->cc_cur[i] = 0.0f;
     }
-    t->cc_mode = E1_CC_ON_PULSE;
-    t->slew = 0;
-    t->next_k = 0;
-    t->cur_step = -1;
+    snprintf(t->name, sizeof t->name, "%s", DEFAULT_NAMES[index >= 0 && index < E1_TRACKS ? index : 0]);
+    runtime_reset(t);
 }
 
-/* The starter project: tracks 1-8 drums into a Move drum rack on channel 1,
- * 9-11 melodic on Move tracks 2-4, 12-16 CC tracks on channels 5-9. */
+/* The starter set: tracks 1-8 drums into a Move drum rack on channel 1,
+ * 9-11 melodic on channels 2-4, 12-16 CC tracks on channels 5-9. */
 void e1_init(e1_engine_t *e)
 {
     memset(e, 0, sizeof(*e));
@@ -94,31 +209,32 @@ void e1_init(e1_engine_t *e)
         e1_track_t *t = &e->t[i];
         e1_track_defaults(t, i);
         if (i < 8) {
-            t->channel = 0;
-            t->note = (uint8_t)(36 + i);
-            t->pulses = drum_pulses[i];
-            t->rotate = drum_rot[i];
-            t->muted = (i >= 4);   /* start with a simple four-track groove */
+            t->v[E1_P_PULSES] = drum_pulses[i];
+            t->v[E1_P_ROTATE] = drum_rot[i];
+            t->v[E1_P_MUTE] = (i >= 4);
         } else if (i < 11) {
-            t->channel = (uint8_t)(i - 8 + 1);   /* channels 2-4 */
-            t->note_mode = E1_NOTE_MELODIC;
-            t->note = (uint8_t)(i == 8 ? 36 : (i == 9 ? 60 : 72));
-            t->pulses = (uint8_t)(i == 8 ? 5 : 3);
-            t->steps = (uint8_t)(i == 10 ? 12 : 16);
-            t->division = (uint8_t)(i == 9 ? 3 : 4);
-            t->sustain = 40;
-            t->muted = 1;
+            t->v[E1_P_CHANNEL] = (int16_t)(i - 8 + 2);
+            t->v[E1_P_SCALE] = 2;                 /* minor */
+            t->v[E1_P_SUSTAIN] = 40;
+            t->v[E1_P_MUTE] = 1;
+            if (i == 8) { t->pool[0] = 36; t->pool_n = 1; t->v[E1_P_PULSES] = 5; }
+            if (i == 9) {
+                t->pool[0] = 60; t->pool[1] = 63; t->pool[2] = 67; t->pool_n = 3;
+                t->v[E1_P_PULSES] = 3; t->v[E1_P_DIVISION] = 3; t->v[E1_P_SUSTAIN] = 60;
+            }
+            if (i == 10) {
+                t->pool[0] = 72; t->pool[1] = 75; t->pool[2] = 79; t->pool_n = 3;
+                t->v[E1_P_STEPS] = 12; t->v[E1_P_PULSES] = 7; t->v[E1_P_STYLE] = 4;   /* mono ramp */
+                t->v[E1_P_VOICING] = 2;
+            }
         } else {
-            t->type = E1_TYPE_CC;
-            t->channel = (uint8_t)(i - 11 + 4);  /* channels 5-9 */
-            t->pulses = 4;
-            t->muted = 1;
+            t->v[E1_P_TYPE] = E1_TYPE_CC;
+            t->v[E1_P_CHANNEL] = (int16_t)(i - 11 + 5);
+            t->v[E1_P_MUTE] = 1;
         }
     }
     e->dest = E1_DEST_MOVE;
     e->seed = 0xE1u;
-    e->running = 0;
-    e->tick = 0.0;
 }
 
 /* ---------------------------------------------------------------- euclid */
@@ -130,47 +246,90 @@ static int euclid_base(int steps, int pulses, int j)
     return ((j * pulses) % steps) < pulses;
 }
 
-int e1_hit(const e1_track_t *t, int i, int fill)
+/* Pattern-space index of step i: hand edits follow the pattern when it rotates. */
+static int pattern_index(int i, int rotate, int steps)
 {
-    int steps = t->steps < 1 ? 1 : t->steps;
+    return ((i - rotate % steps) % steps + steps) % steps;
+}
+
+static int hit(const e1_engine_t *e, int ti, int c, int i, int fill)
+{
+    const e1_track_t *t = &e->t[ti];
+    int steps = eff(e, ti, E1_P_STEPS, c, -1);
     if (i < 0 || i >= steps) return 0;
-    int r = t->rotate % steps;
-    int j = ((i - r) % steps + steps) % steps;   /* pattern space */
-    int pulses = t->pulses + (fill ? t->fill : 0);
+    int j = pattern_index(i, eff(e, ti, E1_P_ROTATE, c, -1), steps);
+    int pulses = eff(e, ti, E1_P_PULSES, c, -1) + (fill ? eff(e, ti, E1_P_FILL, c, -1) : 0);
     if (pulses > steps) pulses = steps;
     int h = euclid_base(steps, pulses, j);
-    if (t->del_mask & (1ULL << j)) h = 0;
-    if (t->add_mask & (1ULL << j)) h = 1;
+    uint64_t bit = 1ULL << j;
+    if (t->del_mask & bit) h = 0;
+    if (t->add_mask & bit) h = 1;
+    if (c >= 0 && c < E1_CYCLES) {
+        if (t->cdel[c] & bit) h = 0;
+        if (t->cadd[c] & bit) h = 1;
+    }
     return h;
 }
 
-uint64_t e1_hit_mask(const e1_track_t *t, int fill)
+uint64_t e1_hit_mask(const e1_engine_t *e, int track, int cycle, int fill)
 {
+    if (track < 0 || track >= E1_TRACKS) return 0;
+    int steps = eff(e, track, E1_P_STEPS, cycle, -1);
     uint64_t m = 0;
-    for (int i = 0; i < t->steps && i < 64; i++)
-        if (e1_hit(t, i, fill)) m |= (1ULL << i);
+    for (int i = 0; i < steps && i < 64; i++) if (hit(e, track, cycle, i, fill)) m |= 1ULL << i;
     return m;
 }
 
-void e1_toggle_step(e1_track_t *t, int i)
+int e1_steps(const e1_engine_t *e, int track, int cycle)
 {
-    int steps = t->steps < 1 ? 1 : t->steps;
-    if (i < 0 || i >= steps) return;
-    int r = t->rotate % steps;
-    int j = ((i - r) % steps + steps) % steps;
-    uint64_t bit = 1ULL << j;
-    if (e1_hit(t, i, 0)) {
-        if (t->add_mask & bit) t->add_mask &= ~bit;
-        else t->del_mask |= bit;
-    } else {
-        if (t->del_mask & bit) t->del_mask &= ~bit;
-        else t->add_mask |= bit;
+    if (track < 0 || track >= E1_TRACKS) return 16;
+    return eff(e, track, E1_P_STEPS, cycle, -1);
+}
+
+int e1_display_cycle(const e1_track_t *t)
+{
+    if (t->edit_mask) return lowest_bit(t->edit_mask);
+    return clampi(t->cur_cycle, 0, E1_CYCLES - 1);
+}
+
+uint32_t e1_cycles_edited(const e1_track_t *t)
+{
+    uint32_t m = 0;
+    for (int c = 0; c < E1_CYCLES; c++) {
+        int ed = (t->cadd[c] || t->cdel[c]);
+        for (int p = 0; p < E1_NP && !ed; p++) if (t->cyc[c][p]) ed = 1;
+        for (int l = 0; l < E1_CC_LANES && !ed; l++) if (t->cc_cyc[c][l]) ed = 1;
+        if (ed) m |= 1u << c;
     }
+    return m;
+}
+
+static void toggle_step(e1_engine_t *e, int ti, int i)
+{
+    e1_track_t *t = &e->t[ti];
+    if (t->edit_mask) {
+        for (int c = 0; c < E1_CYCLES; c++) {
+            if (!(t->edit_mask & (1u << c))) continue;
+            int steps = eff(e, ti, E1_P_STEPS, c, -1);
+            if (i < 0 || i >= steps) continue;
+            uint64_t bit = 1ULL << pattern_index(i, eff(e, ti, E1_P_ROTATE, c, -1), steps);
+            int want = !hit(e, ti, c, i, 0);
+            t->cadd[c] &= ~bit; t->cdel[c] &= ~bit;
+            if (hit(e, ti, c, i, 0) != want) { if (want) t->cadd[c] |= bit; else t->cdel[c] |= bit; }
+        }
+        return;
+    }
+    int steps = eff(e, ti, E1_P_STEPS, -1, -1);
+    if (i < 0 || i >= steps) return;
+    uint64_t bit = 1ULL << pattern_index(i, eff(e, ti, E1_P_ROTATE, -1, -1), steps);
+    int want = !hit(e, ti, -1, i, 0);
+    t->add_mask &= ~bit; t->del_mask &= ~bit;
+    if (hit(e, ti, -1, i, 0) != want) { if (want) t->add_mask |= bit; else t->del_mask |= bit; }
 }
 
 int e1_ports(const e1_engine_t *e, const e1_track_t *t)
 {
-    int o = t->output;
+    int o = t->v[E1_P_OUTPUT];
     if (o == E1_OUT_GLOBAL) {
         if (e->dest == E1_DEST_COMPUTER) return E1_PORT_COMPUTER;
         if (e->dest == E1_DEST_BOTH) return E1_PORT_MOVE | E1_PORT_COMPUTER;
@@ -181,79 +340,83 @@ int e1_ports(const e1_engine_t *e, const e1_track_t *t)
     return E1_PORT_MOVE;
 }
 
-/* ------------------------------------------------------------- transport */
+/* ----------------------------------------------------------------- time */
 
-static double base_ticks(const e1_track_t *t)
+static double speed_f(const e1_track_t *t) { return t->p_speed > 0 ? 2.0 : (t->p_speed < 0 ? 0.5 : 1.0); }
+
+/* Track time: ticks since the track's own zero, scaled by half/double time.
+ * Because it is a function of the transport, letting go of a speed move
+ * lands the track back in sync. */
+static double track_time(const e1_engine_t *e, const e1_track_t *t, double tick)
 {
-    return (double)e1_division_ticks[t->division < E1_DIVISIONS ? t->division : 4];
+    return (tick - e->origin - t->toff) * speed_f(t);
+}
+static double engine_time(const e1_engine_t *e, const e1_track_t *t, double T)
+{
+    return e->origin + t->toff + T / speed_f(t);
 }
 
-static double slot_ticks(const e1_track_t *t)
-{
-    double st = base_ticks(t);
-    if (t->p_speed < 0) st *= 2.0;
-    else if (t->p_speed > 0) st *= 0.5;
-    return st;
-}
+typedef struct {
+    int c;            /* cycle */
+    int step;         /* step in the cycle */
+    int steps;
+    int dur;          /* ticks until the next slot */
+    int64_t start;    /* track time */
+} slot_t;
 
-static double slot_time(const e1_engine_t *e, const e1_track_t *t, int64_t k, double origin)
+/* The slot that contains track time T. One round is every active cycle
+ * played once; Length cuts the round short and starts again. */
+static void slot_at(const e1_engine_t *e, int ti, int64_t T, slot_t *s)
 {
-    (void)e;
-    double st = slot_ticks(t);
-    double tm = origin + (double)k * st + st * (double)t->delay / 100.0;
-    if (k & 1) tm += st * (double)t->timing / 100.0;
-    return tm;
-}
+    const e1_track_t *t = &e->t[ti];
+    if (T < 0) T = 0;
+    int64_t Lt = (int64_t)e1_length_bars[clampi(t->v[E1_P_LENGTH], 0, E1_LENGTHS - 1)] * E1_TICKS_PER_BAR;
+    int64_t base = 0, Tm = T;
+    if (Lt > 0) { base = (T / Lt) * Lt; Tm = T - base; }
 
-static int64_t mod64(int64_t a, int64_t m) { int64_t r = a % m; return r < 0 ? r + m : r; }
+    int list[E1_CYCLES], n = 0;
+    if (t->edit_mask) { for (int c = 0; c < E1_CYCLES; c++) if (t->edit_mask & (1u << c)) list[n++] = c; }
+    else { int nc = clampi(t->v[E1_P_CYCLES], 1, E1_CYCLES); for (int c = 0; c < nc; c++) list[n++] = c; }
 
-/* Sequence position after Freeze. */
-static int64_t effective_s(const e1_track_t *t, int64_t s)
-{
-    if (t->p_freeze > 0 && s >= t->freeze_s0)
-        return t->freeze_s0 + mod64(s - t->freeze_s0, t->p_freeze);
-    return s;
-}
-
-static int slot_step(const e1_track_t *t, int64_t s)
-{
-    int steps = t->steps < 1 ? 1 : t->steps;
-    int bars = e1_length_bars[t->length < E1_LENGTHS ? t->length : 0];
-    int step;
-    if (bars > 0) {
-        int64_t per = (int64_t)((double)(bars * E1_TICKS_PER_BAR) / base_ticks(t));
-        if (per < 1) per = 1;
-        step = (int)(mod64(s, per) % steps);
-    } else {
-        step = (int)mod64(s, steps);
+    int st[E1_CYCLES], dt[E1_CYCLES];
+    int64_t round = 0;
+    for (int i = 0; i < n; i++) {
+        st[i] = eff(e, ti, E1_P_STEPS, list[i], -1);
+        dt[i] = div_ticks(eff(e, ti, E1_P_DIVISION, list[i], -1));
+        round += (int64_t)st[i] * dt[i];
     }
-    if (t->p_reverse) step = steps - 1 - step;
-    return step;
+    int64_t r = Tm % round, acc = Tm - r;
+    s->c = list[0]; s->step = 0; s->steps = st[0]; s->dur = dt[0]; s->start = base + acc;
+    for (int i = 0; i < n; i++) {
+        int64_t D = (int64_t)st[i] * dt[i];
+        if (r < D) {
+            s->c = list[i]; s->steps = st[i]; s->dur = dt[i];
+            s->step = (int)(r / dt[i]);
+            s->start = base + acc + (int64_t)s->step * dt[i];
+            break;
+        }
+        r -= D; acc += D;
+    }
+    if (Lt > 0 && s->start + s->dur > base + Lt) s->dur = (int)(base + Lt - s->start);
+    if (s->dur < 1) s->dur = 1;
 }
 
-/* Re-anchor a running track after its step length changed (Division, half
- * or double time), so it carries on with the next step instead of jumping
- * to wherever the new grid would put it. */
-static void reanchor(e1_engine_t *e, e1_track_t *t)
+static int64_t ceil64(double x) { return (int64_t)ceil(x - 1e-9); }
+
+static void resync(e1_engine_t *e, e1_track_t *t)
 {
-    if (!e->running) return;
-    double st = slot_ticks(t);
-    int64_t k = (int64_t)ceil((e->tick - e->origin) / st - 1e-9);
-    if (k < 0) k = 0;
-    t->next_k = k;
-    t->step_off = k - (t->last_s + 1);
-    t->rat_left = 0;
+    double Tn = track_time(e, t, e->tick);
+    t->cursor = Tn <= 0 ? 0 : ceil64(Tn);
+    t->fired = 0;
+    t->fz_dt = 0;
 }
 
-void e1_reanchor(e1_engine_t *e, int track)
+void e1_resync(e1_engine_t *e, int track)
 {
-    if (track >= 0 && track < E1_TRACKS) reanchor(e, &e->t[track]);
+    if (track >= 0 && track < E1_TRACKS) resync(e, &e->t[track]);
 }
 
-void e1_start(e1_engine_t *e, double tick)
-{
-    e1_join(e, tick, tick);
-}
+void e1_start(e1_engine_t *e, double tick) { e1_join(e, tick, tick); }
 
 void e1_join(e1_engine_t *e, double origin, double now)
 {
@@ -262,26 +425,38 @@ void e1_join(e1_engine_t *e, double origin, double now)
     e->tick = now;
     for (int i = 0; i < E1_TRACKS; i++) {
         e1_track_t *t = &e->t[i];
-        double st = slot_ticks(t);
-        int64_t k = (int64_t)ceil((now - origin) / st - 1e-9);
-        t->next_k = k < 0 ? 0 : k;
-        t->step_off = 0;
-        t->last_s = t->next_k - 1;
+        t->toff = 0;
         t->cur_step = -1;
-        t->rat_left = 0;
+        t->cur_cycle = 0;
+        for (int c = 0; c < E1_CHAINS; c++) t->chain[c].left = 0;
+        resync(e, t);
     }
 }
 
-static void note_off(e1_track_t *t, e1_emit_fn emit, void *user)
+/* --------------------------------------------------------------- voices */
+
+static void voices_off(e1_track_t *t, e1_emit_fn emit, void *user)
 {
-    if (!t->gate_open) return;
-    emit(user, t->gate_ports, (uint8_t)(0x80 | (t->gate_ch & 0x0F)), t->gate_note, 0);
-    t->gate_open = 0;
+    for (int i = 0; i < E1_VOICES; i++) {
+        e1_voice_t *v = &t->voice[i];
+        if (!v->on) continue;
+        emit(user, v->ports, (uint8_t)(0x80 | (v->ch & 0x0F)), v->note, 0);
+        v->on = 0;
+    }
+}
+
+static void chains_off(e1_track_t *t) { for (int c = 0; c < E1_CHAINS; c++) t->chain[c].left = 0; }
+
+void e1_track_silence(e1_engine_t *e, int track, e1_emit_fn emit, void *user)
+{
+    if (track < 0 || track >= E1_TRACKS) return;
+    voices_off(&e->t[track], emit, user);
+    chains_off(&e->t[track]);
 }
 
 void e1_all_notes_off(e1_engine_t *e, e1_emit_fn emit, void *user)
 {
-    for (int i = 0; i < E1_TRACKS; i++) { note_off(&e->t[i], emit, user); e->t[i].rat_left = 0; }
+    for (int i = 0; i < E1_TRACKS; i++) e1_track_silence(e, i, emit, user);
 }
 
 void e1_stop(e1_engine_t *e, e1_emit_fn emit, void *user)
@@ -294,6 +469,119 @@ void e1_stop(e1_engine_t *e, e1_emit_fn emit, void *user)
 void e1_copy_stored(e1_track_t *dst, const e1_track_t *src)
 {
     memcpy(dst, src, E1_TRACK_STORED_BYTES);
+}
+
+static void note_on(e1_engine_t *e, e1_track_t *t, int note, int vel, double when, double len,
+                    e1_emit_fn emit, void *user)
+{
+    int ports = e1_ports(e, t);
+    uint8_t ch = (uint8_t)((t->v[E1_P_CHANNEL] - 1) & 0x0F);
+    note = clampi(note, 0, 127);
+    e1_voice_t *slot = NULL;
+    for (int i = 0; i < E1_VOICES; i++) {
+        e1_voice_t *v = &t->voice[i];
+        if (v->on && v->note == note && v->ch == ch) {      /* retrigger: close it first */
+            emit(user, v->ports, (uint8_t)(0x80 | ch), v->note, 0);
+            v->on = 0;
+        }
+        if (!v->on && !slot) slot = v;
+    }
+    if (!slot) {                                            /* steal the one ending soonest */
+        slot = &t->voice[0];
+        for (int i = 1; i < E1_VOICES; i++) if (t->voice[i].off < slot->off) slot = &t->voice[i];
+        emit(user, slot->ports, (uint8_t)(0x80 | (slot->ch & 0x0F)), slot->note, 0);
+    }
+    emit(user, ports, (uint8_t)(0x90 | ch), (uint8_t)note, (uint8_t)clampi(vel, 1, 127));
+    slot->on = 1; slot->note = (uint8_t)note; slot->ch = ch; slot->ports = (uint8_t)ports;
+    slot->off = when + (len < 1.0 ? 1.0 : len);
+    t->flash = 1;
+}
+
+/* ---------------------------------------------------------------- pitch */
+
+static int shift_in_scale(int note, int d, int scale, int root)
+{
+    const int8_t *deg = SCALE_DEG[scale];
+    int n = SCALE_LEN[scale];
+    int rel = note - root;
+    int oct = (rel >= 0) ? rel / 12 : -((-rel + 11) / 12);
+    int pc = rel - oct * 12;
+    int k = 0;
+    for (int i = 0; i < n; i++) if (deg[i] <= pc) k = i;      /* snap down into the scale */
+    int idx = oct * n + k + d;
+    int o2 = (idx >= 0) ? idx / n : -((-idx + n - 1) / n);
+    int k2 = idx - o2 * n;
+    return root + o2 * 12 + deg[k2];
+}
+
+static void sort_notes(int *a, int n)
+{
+    for (int i = 1; i < n; i++) {
+        int x = a[i], j = i - 1;
+        while (j >= 0 && a[j] > x) { a[j + 1] = a[j]; j--; }
+        a[j + 1] = x;
+    }
+}
+
+/* Phrase position 0..1 mapped to tenths of Range. */
+static int phrase_tenths(int phrase, double ph)
+{
+    if (phrase < 4) return CADENCE[phrase][clampi((int)(ph * 8.0), 0, 7)];
+    switch (phrase) {
+    case 4: return (int)(ph * 10.0);
+    case 5: return (int)lrint((1.0 - fabs(2.0 * ph - 1.0)) * 10.0);
+    case 6: return (int)lrint((0.5 - 0.5 * cos(6.283185307179586 * ph)) * 10.0);
+    default: return ph < 0.5 ? 0 : 10;
+    }
+}
+
+/* The notes one pulse plays. pidx counts pulses since the cycle began (and
+ * goes on counting through repeats), which is what moves mono styles and
+ * Climb along. Returns the note count, at most E1_POOL. */
+static int build_notes(const e1_engine_t *e, int ti, int c, int pidx, int shift, int ridx, int *out)
+{
+    const e1_track_t *t = &e->t[ti];
+    int n = t->pool_n;
+    if (n <= 0) return 0;
+    if (n > E1_POOL) n = E1_POOL;
+    int scale = eff(e, ti, E1_P_SCALE, c, ridx), root = eff(e, ti, E1_P_ROOT, c, ridx);
+    int pitch = eff(e, ti, E1_P_PITCH, c, ridx), harm = eff(e, ti, E1_P_HARMONY, c, ridx);
+    int voicing = eff(e, ti, E1_P_VOICING, c, ridx), style = eff(e, ti, E1_P_STYLE, c, ridx);
+    int down = eff(e, ti, E1_P_DIR, c, ridx);
+
+    int L[E1_POOL + 16], len = n;
+    int ha = harm < 0 ? -harm : harm, hs = harm < 0 ? -1 : 1;
+    for (int j = 0; j < n; j++) {
+        int extra = (ha > j) ? (ha - j + n - 1) / n : 0;     /* Harmony moves one note per click */
+        L[j] = shift_in_scale(t->pool[j], pitch + shift + hs * extra, scale, root);
+    }
+    sort_notes(L, len);
+
+    int poly = style < 3, kind = style % 3;
+    int va = voicing < 0 ? -voicing : voicing, vs = voicing < 0 ? -1 : 1;
+    if (kind == 1) {                                          /* Ramp: add notes like an arpeggiator range */
+        for (int k = 0; k < va && len < E1_POOL + 16; k++) {
+            int src = vs > 0 ? L[k % n] : L[n - 1 - (k % n)];
+            L[len++] = src + vs * 12 * (1 + k / n);
+        }
+        sort_notes(L, len);
+    } else {
+        int inv = (kind == 2) ? (pidx % (va + 1)) : va;       /* Climb walks through the inversions */
+        for (int k = 0; k < inv; k++) {
+            if (vs > 0) L[0] += 12; else L[len - 1] -= 12;
+            sort_notes(L, len);
+        }
+    }
+    for (int j = 0; j < len; j++) { while (L[j] > 127) L[j] -= 12; while (L[j] < 0) L[j] += 12; }
+
+    if (poly) {
+        int m = len > E1_POOL ? E1_POOL : len;
+        for (int j = 0; j < m; j++) out[j] = L[j];
+        return m;
+    }
+    int idx = pidx % len;
+    out[0] = L[down ? len - 1 - idx : idx];
+    return 1;
 }
 
 /* -------------------------------------------------------------- perform */
@@ -310,96 +598,211 @@ void e1_perf(e1_engine_t *e, uint32_t mask, const char *move, int value)
         if (!(mask & (1u << i))) continue;
         e1_track_t *t = &e->t[i];
         if (strcmp(move, "fill") == 0) t->p_fill = (uint8_t)(value != 0);
-        else if (strcmp(move, "ratchet") == 0) { t->p_ratchet = (uint8_t)clampi(value, 0, 4); if (t->p_ratchet < 2) t->rat_left = 0; }
+        else if (strcmp(move, "ratchet") == 0) t->p_ratchet = (uint8_t)clampi(value, 0, 4);
         else if (strcmp(move, "speed") == 0) {
             int8_t sp = (int8_t)clampi(value, -1, 1);
-            if (sp != t->p_speed) { t->p_speed = sp; reanchor(e, t); }
+            if (sp != t->p_speed) { t->p_speed = sp; t->p_freeze = 0; resync(e, t); }
         }
         else if (strcmp(move, "reverse") == 0) t->p_reverse = (uint8_t)(value != 0);
         else if (strcmp(move, "freeze") == 0) {
-            int n = clampi(value, 0, 64);
-            if (n > 0 && t->p_freeze == 0) t->freeze_s0 = t->last_s - n + 1;
-            t->p_freeze = (uint8_t)n;
+            t->p_freeze = (uint8_t)clampi(value, 0, 64);
+            resync(e, t);
         }
-        else if (strcmp(move, "thin") == 0) t->p_thin = (uint8_t)(value != 0);
         else if (strcmp(move, "accent") == 0) t->p_accent = (uint8_t)(value != 0);
-        else if (strcmp(move, "restart") == 0) { t->step_off = t->next_k; t->last_s = -1; t->p_freeze = 0; }
+        else if (strcmp(move, "restart") == 0) {
+            /* Step 1 falls on the track's next step line, so it stays on the grid. */
+            slot_t rs;
+            double Tn = track_time(e, t, e->tick);
+            slot_at(e, i, (int64_t)floor(Tn < 0 ? 0 : Tn), &rs);
+            double d = (double)rs.dur / speed_f(t);
+            double rel = e->tick - e->origin - t->toff;
+            t->toff += ceil(rel / d - 1e-9) * d;
+            t->p_freeze = 0;
+            t->cursor = 0; t->fired = 0; t->fz_dt = 0;
+        }
         else if (strcmp(move, "rotate") == 0) {
-            int steps = t->steps < 1 ? 1 : t->steps;
-            t->rotate = (uint8_t)mod64(t->rotate + value, steps);
+            int steps = eff(e, i, E1_P_STEPS, -1, -1);
+            t->v[E1_P_ROTATE] = (int16_t)(((t->v[E1_P_ROTATE] + value % steps) % steps + steps) % steps);
         }
         else if (strcmp(move, "clear") == 0) {
-            t->p_fill = t->p_ratchet = t->p_reverse = t->p_freeze = t->p_thin = t->p_accent = 0;
-            t->rat_left = 0;
-            if (t->p_speed) { t->p_speed = 0; reanchor(e, t); }
+            t->p_fill = t->p_ratchet = t->p_reverse = t->p_accent = 0;
+            if (t->p_speed || t->p_freeze) { t->p_speed = 0; t->p_freeze = 0; resync(e, t); }
         }
     }
     if (strcmp(move, "clear") == 0) for (int i = 0; i < E1_TRACKS; i++) e->t[i].p_solo_mute = 0;
 }
 
-/* --------------------------------------------------------------- advance */
+/* --------------------------------------------------------------- firing */
 
 static void cc_send(e1_track_t *t, int lane, int value, int ports, e1_emit_fn emit, void *user)
 {
     value = clampi(value, 0, 127);
-    emit(user, ports, (uint8_t)(0xB0 | (t->channel & 0x0F)), (uint8_t)(t->cc_num[lane] & 0x7F), (uint8_t)value);
+    emit(user, ports, (uint8_t)(0xB0 | ((t->v[E1_P_CHANNEL] - 1) & 0x0F)), (uint8_t)(t->cc_num[lane] & 0x7F), (uint8_t)value);
     t->cc_sent[lane] = (int16_t)value;
 }
 
-static void note_on(e1_engine_t *e, e1_track_t *t, double when, double len, int vel,
-                    e1_emit_fn emit, void *user)
+static int cc_eff(const e1_engine_t *e, int ti, int lane, int c, int ridx)
 {
-    note_off(t, emit, user);
-    int ports = e1_ports(e, t);
-    uint8_t ch = (uint8_t)(t->channel & 0x0F);
-    uint8_t note = t->note & 0x7F;
-    emit(user, ports, (uint8_t)(0x90 | ch), note, (uint8_t)clampi(vel, 1, 127));
-    t->gate_open = 1;
-    t->gate_note = note;
-    t->gate_ch = ch;
-    t->gate_ports = (uint8_t)ports;
-    t->gate_off = when + (len < 1.0 ? 1.0 : len);
-    t->flash = 1;
+    const e1_track_t *t = &e->t[ti];
+    int v = t->cc_val[lane];
+    if (v < 0) return -1;
+    if (c >= 0 && c < E1_CYCLES) v += t->cc_cyc[c][lane];
+    if (t->cc_rnd[lane] && t->v[E1_P_RANDOM] > 0 && ridx >= 0) {
+        uint64_t h = mix(((uint64_t)e->seed << 32) ^ ((uint64_t)(ti * 64 + 48 + lane) << 16) ^ (uint64_t)ridx);
+        if ((int)(h % 100ULL) < t->v[E1_P_RANDOM])
+            v += (int)lrint((double)t->cc_rnd[lane] / 100.0 * 127.0 * ((double)((h >> 8) % 1001ULL) / 1000.0));
+    }
+    return clampi(v, 0, 127);
 }
 
-static void fire_slot(e1_engine_t *e, int ti, e1_track_t *t, int64_t k, double when,
-                      e1_emit_fn emit, void *user)
+static int groove_tenths(int groove, int step)
 {
-    int64_t s = k - t->step_off;
-    t->last_s = s;
-    t->rat_left = 0;
-    int64_t se = effective_s(t, s);
-    int step = slot_step(t, se);
-    t->cur_step = step;
-    if (!e1_hit(t, step, t->p_fill)) return;
-    if (t->prob < 100 && e1_chance(e->seed, ti, se) >= t->prob) return;
-    if (t->p_thin && e1_chance(e->seed ^ 0xA5A5A5A5u, ti, se) < 50) return;
-    if (t->muted || t->p_solo_mute) return;
+    int i = step & 15;
+    if (groove < 4) return GROOVE_SHAPE[groove][i];
+    switch (groove) {
+    case 4: return -10 + (20 * i) / 15;
+    case 5: return i < 8 ? -10 + (20 * i) / 8 : 10 - (20 * (i - 8)) / 8;
+    case 6: return (int)lrint(10.0 * sin(6.283185307179586 * (double)i / 16.0));
+    default: return (i & 4) ? -10 : 10;
+    }
+}
 
-    if (t->type == E1_TYPE_CC) {
+static int random_step(const e1_track_t *t, int64_t T)
+{
+    return (int)((T / div_ticks(t->v[E1_P_RATE])) & 0x3FFFFFFF);
+}
+
+static void fire(e1_engine_t *e, int ti, const slot_t *s, double when, e1_emit_fn emit, void *user)
+{
+    e1_track_t *t = &e->t[ti];
+    int c = s->c;
+    int step = t->p_reverse ? s->steps - 1 - s->step : s->step;
+    t->cur_step = step;
+    t->cur_cycle = c;
+    if (!hit(e, ti, c, step, t->p_fill)) return;
+
+    int ridx = random_step(t, s->start);
+    int64_t id = (int64_t)((uint64_t)s->start * 2654435761ULL + (uint64_t)ti);
+    int prob = eff(e, ti, E1_P_PROB, c, ridx);
+    if (prob < 0 && e1_chance(e->seed, ti, id) < -prob) return;   /* the whole pulse and its repeats */
+    if (t->v[E1_P_MUTE] || t->p_solo_mute) return;
+
+    if (t->v[E1_P_TYPE] == E1_TYPE_CC) {
         int ports = e1_ports(e, t);
         t->flash = 1;
         for (int l = 0; l < E1_CC_LANES; l++) {
-            if (t->cc_val[l] < 0) continue;
-            if (t->cc_mode == E1_CC_ON_PULSE) cc_send(t, l, t->cc_val[l], ports, emit, user);
-            else if (t->cc_mode == E1_CC_GLIDE) t->cc_target[l] = t->cc_val[l];
+            int v = cc_eff(e, ti, l, c, ridx);
+            if (v < 0) continue;
+            int mode = t->v[E1_P_CCMODE];
+            if (mode == E1_CC_ON_PULSE) cc_send(t, l, v, ports, emit, user);
+            else if (mode == E1_CC_ON_CHANGE) { if (v != t->cc_sent[l]) cc_send(t, l, v, ports, emit, user); }
+            else t->cc_target[l] = (int16_t)v;
         }
         return;
     }
 
-    double st = slot_ticks(t);
-    double len = st * (double)t->sustain / 50.0;
-    int vel = t->p_accent ? 127 : t->velocity;
-    if (t->p_ratchet >= 2) {
-        double dt = st / (double)t->p_ratchet;
-        if (len > dt * 0.8) len = dt * 0.8;
-        t->rat_left = (uint8_t)(t->p_ratchet - 1);
-        t->rat_dt = dt;
-        t->rat_next = when + dt;
-        t->rat_len = len;
-        t->rat_vel = (uint8_t)clampi(vel, 1, 127);
+    /* pulses so far in this cycle, in play order */
+    int pidx = 0;
+    for (int i = 0; i < s->steps; i++) {
+        int before = t->p_reverse ? (i > step) : (i < step);
+        if (before && hit(e, ti, c, i, t->p_fill)) pidx++;
     }
-    note_on(e, t, when, len, vel, emit, user);
+
+    static const int PRATE_TICKS[3] = { 4 * E1_TICKS_PER_BAR, 2 * E1_TICKS_PER_BAR, 8 * E1_TICKS_PER_BAR };
+    int ptk = PRATE_TICKS[clampi(t->v[E1_P_PHRASERATE], 0, 2)];
+    double ph = (double)(s->start % ptk) / (double)ptk;
+    int range = eff(e, ti, E1_P_RANGE, c, ridx);
+    int shift = (int)lrint((double)range * (double)phrase_tenths(eff(e, ti, E1_P_PHRASE, c, ridx), ph) / 10.0);
+
+    double sp = speed_f(t);
+    int vel = eff(e, ti, E1_P_VELOCITY, c, ridx);
+    int accent = eff(e, ti, E1_P_ACCENT, c, ridx);
+    if (accent) vel += accent * 6 * groove_tenths(eff(e, ti, E1_P_GROOVE, c, ridx), step) / 100;
+    if (t->p_accent) vel = 127;
+    vel = clampi(vel, 1, 127);
+
+    double len = (double)s->dur * (double)eff(e, ti, E1_P_SUSTAIN, c, ridx) / 50.0 / sp;
+    int repeats = eff(e, ti, E1_P_REPEATS, c, ridx);
+    double interval = (double)div_ticks(eff(e, ti, E1_P_TIME, c, ridx)) / sp;
+    double pace = 1.0 + (double)eff(e, ti, E1_P_PACE, c, ridx) / 200.0;
+    int ramp = eff(e, ti, E1_P_RAMP, c, ridx);
+    if (t->p_ratchet >= 2) {                     /* a held ratchet replaces the track's repeats */
+        repeats = t->p_ratchet - 1;
+        interval = (double)s->dur / sp / (double)t->p_ratchet;
+        pace = 1.0; ramp = 0;
+    }
+    if (repeats > 0 && len > interval * 0.9) len = interval * 0.9;
+
+    int tail = t->v[E1_P_TAIL];
+    if (!tail) { chains_off(t); voices_off(t, emit, user); }   /* a new pulse cuts what came before */
+    else for (int k = 0; k < E1_CHAINS; k++)                    /* "until the next pulse" ends here */
+        if (t->chain[k].left > 1000) t->chain[k].left = 0;
+
+    int notes[E1_POOL];
+    int n = build_notes(e, ti, c, pidx, shift, ridx, notes);
+    int drop = prob > 0 ? prob : 0;
+    for (int j = 0; j < n; j++) {
+        if (drop && e1_chance(e->seed, ti, (int64_t)((uint64_t)id * 31u + (uint64_t)j + 1u)) < drop) continue;
+        note_on(e, t, notes[j], vel, when, len, emit, user);
+    }
+
+    if (repeats > 0) {
+        e1_chain_t *ch = &t->chain[0];
+        for (int k = 0; k < E1_CHAINS; k++) {
+            if (!t->chain[k].left) { ch = &t->chain[k]; break; }
+            if (t->chain[k].next > ch->next) ch = &t->chain[k];   /* else replace the one furthest along */
+        }
+        ch->left = repeats >= E1_REPEATS_INF ? 100000 : repeats;
+        ch->k = 0;
+        ch->interval = interval < 2.0 ? 2.0 : interval;
+        ch->next = when + ch->interval;
+        ch->pace = pace;
+        ch->len = len;
+        ch->vel = vel; ch->ramp = ramp;
+        ch->cyc = c; ch->step = step; ch->pidx = pidx; ch->shift = shift; ch->ridx = ridx;
+        ch->prob = drop;
+        ch->id = (uint32_t)id;
+    }
+}
+
+static void expire(e1_track_t *t, double now, e1_emit_fn emit, void *user)
+{
+    for (int i = 0; i < E1_VOICES; i++) {
+        e1_voice_t *v = &t->voice[i];
+        if (v->on && v->off <= now) {
+            emit(user, v->ports, (uint8_t)(0x80 | (v->ch & 0x0F)), v->note, 0);
+            v->on = 0;
+        }
+    }
+}
+
+static void run_chains(e1_engine_t *e, int ti, double now, e1_emit_fn emit, void *user)
+{
+    e1_track_t *t = &e->t[ti];
+    for (int c = 0; c < E1_CHAINS; c++) {
+        e1_chain_t *ch = &t->chain[c];
+        int guard = 0;
+        while (ch->left > 0 && ch->next <= now && guard++ < 64) {
+            ch->k++;
+            ch->left--;
+            if (!(t->v[E1_P_MUTE] || t->p_solo_mute)) {
+                int notes[E1_POOL];
+                int n = build_notes(e, ti, ch->cyc, ch->pidx + ch->k, ch->shift, ch->ridx, notes);
+                int vel = clampi(ch->vel + ch->ramp * 32 * ch->k / 100, 1, 127);
+                double len = ch->len;
+                if (len > ch->interval * 0.9) len = ch->interval * 0.9;
+                for (int j = 0; j < n; j++) {
+                    if (ch->prob && e1_chance(e->seed, ti, (int64_t)ch->id * 131 + ch->k * 17 + j) < ch->prob) continue;
+                    note_on(e, t, notes[j], vel, ch->next, len, emit, user);
+                }
+            }
+            ch->interval *= ch->pace;
+            if (ch->interval < 2.0) ch->interval = 2.0;
+            if (ch->interval > 4.0 * E1_TICKS_PER_BAR) ch->left = 0;
+            ch->next += ch->interval;
+            if (ch->k > 512) ch->left = 0;
+        }
+    }
 }
 
 /* Live CC edits and glides. Bounded per call so a burst of edits cannot
@@ -410,23 +813,26 @@ static void cc_service(e1_engine_t *e, e1_emit_fn emit, void *user)
     for (int n = 0; n < E1_TRACKS && budget > 0; n++) {
         int ti = (int)((e->cc_rr + (uint32_t)n) % E1_TRACKS);
         e1_track_t *t = &e->t[ti];
-        if (t->type != E1_TYPE_CC) continue;
+        if (t->v[E1_P_TYPE] != E1_TYPE_CC) continue;
         int ports = e1_ports(e, t);
-        int silent = t->muted || t->p_solo_mute;
+        int silent = t->v[E1_P_MUTE] || t->p_solo_mute;
+        int glide = t->v[E1_P_CCMODE] == E1_CC_GLIDE;
+        int slew = t->v[E1_P_SLEW];
+        int dc = e1_display_cycle(t);
         for (int l = 0; l < E1_CC_LANES && budget > 0; l++) {
             if (t->cc_val[l] < 0) { t->cc_dirty &= ~(1u << l); continue; }
             if (t->cc_dirty & (1u << l)) {
                 t->cc_dirty &= ~(1u << l);
-                if (t->cc_mode == E1_CC_GLIDE && t->slew > 0) {
-                    t->cc_target[l] = t->cc_val[l];
-                } else {
-                    if (!silent) { cc_send(t, l, t->cc_val[l], ports, emit, user); budget--; }
-                    t->cc_cur[l] = (float)t->cc_val[l];
+                int v = cc_eff(e, ti, l, dc, -1);
+                if (glide && slew > 0) t->cc_target[l] = (int16_t)v;
+                else {
+                    if (!silent) { cc_send(t, l, v, ports, emit, user); budget--; }
+                    t->cc_cur[l] = (float)v;
                 }
             }
-            if (t->cc_mode == E1_CC_GLIDE && t->cc_target[l] >= 0) {
+            if (glide && t->cc_target[l] >= 0) {
                 float tgt = (float)t->cc_target[l];
-                float rate = 128.0f / (1.0f + (float)t->slew * 4.0f);   /* units per call */
+                float rate = 128.0f / (1.0f + (float)slew * 4.0f);   /* units per call */
                 float cur = t->cc_cur[l];
                 if (cur < tgt) { cur += rate; if (cur > tgt) cur = tgt; }
                 else if (cur > tgt) { cur -= rate; if (cur < tgt) cur = tgt; }
@@ -440,119 +846,108 @@ static void cc_service(e1_engine_t *e, e1_emit_fn emit, void *user)
     e->cc_rr = (e->cc_rr + 1) % E1_TRACKS;
 }
 
-void e1_advance(e1_engine_t *e, double tick_now, e1_emit_fn emit, void *user)
+/* When a slot sounds, in track time: Delay moves the whole track, Timing
+ * moves every second step (or pair, or four) of the swing grid. */
+static double slot_offset(const e1_engine_t *e, int ti, const slot_t *s)
 {
-    cc_service(e, emit, user);
-    if (!e->running) return;
-    if (tick_now < e->tick) tick_now = e->tick;   /* never run time backwards */
-    e->tick = tick_now;
+    const e1_track_t *t = &e->t[ti];
+    double off = (double)s->dur * (double)t->v[E1_P_DELAY] / 100.0;
+    int timing = eff(e, ti, E1_P_TIMING, s->c, random_step(t, s->start));
+    if (timing) {
+        int g = 1 << clampi(t->v[E1_P_SWINGGRID], 0, 2);
+        if ((s->step / g) & 1) off += (double)s->dur * (double)g * (double)timing / 100.0;
+    }
+    return off;
+}
 
-    for (int ti = 0; ti < E1_TRACKS; ti++) {
-        e1_track_t *t = &e->t[ti];
-        int guard = 0;
-        {
-            /* Joined late or the clock jumped: start from "now" instead of
-             * replaying every missed step in one block. */
-            double st = slot_ticks(t);
-            if (tick_now - slot_time(e, t, t->next_k, e->origin) > 2.0 * E1_TICKS_PER_BAR) {
-                int64_t k = (int64_t)floor((tick_now - e->origin) / st);
-                if (k > t->next_k) { t->step_off += k - t->next_k; t->next_k = k; }
-                t->rat_left = 0;
-            }
+static void advance_track(e1_engine_t *e, int ti, double now, e1_emit_fn emit, void *user)
+{
+    e1_track_t *t = &e->t[ti];
+    double Tn = track_time(e, t, now);
+    slot_t s;
+
+    if (t->p_freeze) {
+        if (t->fz_dt == 0) {                      /* just engaged: loop the steps before now */
+            slot_at(e, ti, (int64_t)floor(Tn < 0 ? 0 : Tn), &s);
+            t->fz_dt = s.dur;
+            t->fz_anchor = s.start + s.dur;
+            t->fz_span = (int64_t)t->p_freeze * t->fz_dt;
+            t->fz_j = 0;
         }
-        for (;;) {
-            double when = slot_time(e, t, t->next_k, e->origin);
-            if (t->rat_left && t->rat_next < when && t->rat_next <= tick_now) {
-                if (t->gate_open && t->gate_off <= t->rat_next) note_off(t, emit, user);
-                if (!t->muted && !t->p_solo_mute)
-                    note_on(e, t, t->rat_next, t->rat_len, t->rat_vel, emit, user);
-                t->rat_next += t->rat_dt;
-                t->rat_left--;
-                continue;
-            }
-            if (when > tick_now) break;
-            if (t->gate_open && t->gate_off <= when) note_off(t, emit, user);
-            fire_slot(e, ti, t, t->next_k, when, emit, user);
-            t->next_k++;
-            if (++guard > 256) {
-                double st = slot_ticks(t);
-                int64_t k = (int64_t)floor((tick_now - e->origin) / st) + 1;
-                if (k > t->next_k) { t->step_off += k - t->next_k; t->next_k = k; }
-                break;
-            }
+        for (int guard = 0; guard < 64; guard++) {
+            int64_t V = t->fz_anchor + t->fz_j * t->fz_dt;
+            if ((double)V > Tn) break;
+            int64_t src = t->fz_anchor - t->fz_span + (t->fz_j * t->fz_dt) % t->fz_span;
+            while (src < 0) src += t->fz_span;
+            slot_at(e, ti, src, &s);
+            double when = engine_time(e, t, (double)V);
+            run_chains(e, ti, when - 1e-6, emit, user);
+            expire(t, when, emit, user);
+            fire(e, ti, &s, when, emit, user);
+            t->fz_j++;
         }
-        if (t->gate_open && t->gate_off <= tick_now) note_off(t, emit, user);
+        return;
+    }
+
+    /* Joined late or the clock jumped: carry on from now, don't replay. */
+    if (Tn - (double)t->cursor > 2.0 * E1_TICKS_PER_BAR * speed_f(t)) { t->cursor = ceil64(Tn); t->fired = 0; }
+
+    /* Timing and Delay can move a step past its neighbours, so look a few
+     * slots ahead and always play the earliest one that is due. `fired`
+     * marks slots ahead of the cursor that have already sounded. */
+    for (int guard = 0; guard < 256; guard++) {
+        int64_t st = t->cursor, first = -1;
+        double best = 0; int bj = -1; slot_t bs = { 0 };
+        for (int j = 0; j < 8; j++) {
+            slot_at(e, ti, st, &s);
+            if (s.start < st) {                   /* inside a slot that is already done */
+                int64_t ns = s.start + s.dur;
+                slot_at(e, ti, ns, &s);
+                if (s.start < ns) { s.start = ns; }
+            }
+            if (j == 0) first = s.start;
+            if ((double)s.start - 4.0 * (double)s.dur > Tn) break;   /* nothing later can be due */
+            if (!((t->fired >> j) & 1)) {
+                double fireT = (double)s.start + slot_offset(e, ti, &s);
+                if (fireT <= Tn && (bj < 0 || fireT < best)) { best = fireT; bj = j; bs = s; }
+            }
+            st = s.start + s.dur;
+        }
+        if (t->fired & 1) { t->cursor = first + 1; t->fired >>= 1; continue; }
+        if (bj < 0) break;
+        double when = engine_time(e, t, best);
+        run_chains(e, ti, when - 1e-6, emit, user);   /* echoes due before this pulse play first */
+        expire(t, when, emit, user);
+        fire(e, ti, &bs, when, emit, user);
+        t->fired |= (uint8_t)(1u << bj);
     }
 }
 
-/* ----------------------------------------------------------- parameters */
-
-typedef enum { P_U8, P_I8 } ptype_t;
-
-typedef struct {
-    const char *key;
-    size_t off;
-    ptype_t pt;
-    int lo, hi;              /* API range (channel is 1..16 at the API) */
-    const char *const *names;/* enum option names, or NULL */
-    int api_bias;            /* api = stored + bias */
-} pdesc_t;
-
-#define TOFF(f) offsetof(e1_track_t, f)
-
-static const pdesc_t TRACK_PARAMS[] = {
-    { "type",     TOFF(type),      P_U8, 0, 1,   TYPE_NAMES,   0 },
-    { "steps",    TOFF(steps),     P_U8, 1, 64,  NULL,         0 },
-    { "pulses",   TOFF(pulses),    P_U8, 0, 64,  NULL,         0 },
-    { "rotate",   TOFF(rotate),    P_U8, 0, 63,  NULL,         0 },
-    { "division", TOFF(division),  P_U8, 0, E1_DIVISIONS - 1, e1_division_names, 0 },
-    { "length",   TOFF(length),    P_U8, 0, E1_LENGTHS - 1,   e1_length_names,   0 },
-    { "cycles",   TOFF(cycles),    P_U8, 1, 16,  NULL,         0 },
-    { "prob",     TOFF(prob),      P_U8, 0, 100, NULL,         0 },
-    { "fill",     TOFF(fill),      P_U8, 0, 16,  NULL,         0 },
-    { "channel",  TOFF(channel),   P_U8, 1, 16,  NULL,         1 },
-    { "output",   TOFF(output),    P_U8, 0, 3,   OUT_NAMES,    0 },
-    { "notemode", TOFF(note_mode), P_U8, 0, 1,   NMODE_NAMES,  0 },
-    { "note",     TOFF(note),      P_U8, 0, 127, NULL,         0 },
-    { "vel",      TOFF(velocity),  P_U8, 1, 127, NULL,         0 },
-    { "sustain",  TOFF(sustain),   P_U8, 1, 100, NULL,         0 },
-    { "timing",   TOFF(timing),    P_I8, -50, 50, NULL,        0 },
-    { "delay",    TOFF(delay),     P_I8, -50, 50, NULL,        0 },
-    { "mute",     TOFF(muted),     P_U8, 0, 1,   ONOFF_NAMES,  0 },
-    { "ccmode",   TOFF(cc_mode),   P_U8, 0, 2,   CCMODE_NAMES, 0 },
-    { "slew",     TOFF(slew),      P_U8, 0, 100, NULL,         0 },
-};
-#define N_TRACK_PARAMS ((int)(sizeof(TRACK_PARAMS) / sizeof(TRACK_PARAMS[0])))
-
-static const pdesc_t *find_param(const char *key)
+void e1_advance(e1_engine_t *e, double tick_now, e1_emit_fn emit, void *user)
 {
-    for (int i = 0; i < N_TRACK_PARAMS; i++)
-        if (strcmp(TRACK_PARAMS[i].key, key) == 0) return &TRACK_PARAMS[i];
-    return NULL;
+    cc_service(e, emit, user);
+    if (!e->running || !isfinite(tick_now)) return;
+    if (tick_now < e->tick) tick_now = e->tick;   /* never run time backwards */
+    e->tick = tick_now;
+    for (int ti = 0; ti < E1_TRACKS; ti++) {
+        e1_track_t *t = &e->t[ti];
+        advance_track(e, ti, tick_now, emit, user);
+        run_chains(e, ti, tick_now, emit, user);
+        expire(t, tick_now, emit, user);
+    }
 }
 
-static int read_stored(const void *base, const pdesc_t *d)
-{
-    const uint8_t *p = (const uint8_t *)base + d->off;
-    return d->pt == P_I8 ? (int)*(const int8_t *)p : (int)*p;
-}
+/* ------------------------------------------------------------- set / get */
 
-static void write_stored(void *base, const pdesc_t *d, int v)
-{
-    uint8_t *p = (uint8_t *)base + d->off;
-    if (d->pt == P_I8) *(int8_t *)p = (int8_t)v;
-    else *p = (uint8_t)v;
-}
-
-static int enum_count(const pdesc_t *d) { return d->hi - d->lo + 1; }
-
-/* Parse `val` against a current API value. Returns 1 and sets *out. */
-static int parse_value(const char *val, int cur, int lo, int hi,
-                       const char *const *names, int *out)
+/* Parse `val` against a current value. Returns 1 and sets *out. */
+static int parse_value(const char *val, int cur, int lo, int hi, const char *const *names, int *out)
 {
     if (!val || !*val) return 0;
     if (val[0] == 'd' && (val[1] == '+' || val[1] == '-')) {
-        *out = clampi(cur + atoi(val + 1), lo, hi);
+        long d = strtol(val + 1, NULL, 10);
+        if (d > 100000) d = 100000;
+        if (d < -100000) d = -100000;
+        *out = clampi(cur + (int)d, lo, hi);
         return 1;
     }
     if (names) {
@@ -562,7 +957,9 @@ static int parse_value(const char *val, int cur, int lo, int hi,
     char *end = NULL;
     long v = strtol(val, &end, 10);
     if (end == val) return 0;
-    *out = clampi((int)v, lo, hi);
+    if (v > hi) v = hi;
+    if (v < lo) v = lo;
+    *out = (int)v;
     return 1;
 }
 
@@ -577,14 +974,98 @@ static int parse_lane(const char *key, const char *prefix)
     return (lane >= 0 && lane < E1_CC_LANES) ? lane : -1;
 }
 
-static int set_track(e1_engine_t *e, e1_track_t *t, const char *key, const char *val)
+static void pool_sort(e1_track_t *t)
 {
-    int lane;
+    for (int i = 1; i < t->pool_n; i++) {
+        uint8_t x = t->pool[i]; int j = i - 1;
+        while (j >= 0 && t->pool[j] > x) { t->pool[j + 1] = t->pool[j]; j--; }
+        t->pool[j + 1] = x;
+    }
+}
+
+static void pool_toggle(e1_track_t *t, int note)
+{
+    note = clampi(note, 0, 127);
+    for (int i = 0; i < t->pool_n; i++) {
+        if (t->pool[i] == note) {
+            for (int j = i; j < t->pool_n - 1; j++) t->pool[j] = t->pool[j + 1];
+            t->pool_n--;
+            t->pool[t->pool_n] = 0;
+            return;
+        }
+    }
+    if (t->pool_n >= E1_POOL) return;
+    t->pool[t->pool_n++] = (uint8_t)note;
+    pool_sort(t);
+}
+
+static void pool_parse(e1_track_t *t, const char *val)
+{
+    t->pool_n = 0;
+    memset(t->pool, 0, sizeof t->pool);
+    const char *p = val;
+    while (*p && t->pool_n < E1_POOL) {
+        char *end = NULL;
+        long v = strtol(p, &end, 10);
+        if (end == p) break;
+        t->pool[t->pool_n++] = (uint8_t)clampi((int)v, 0, 127);
+        p = (*end == ',') ? end + 1 : end;
+    }
+    pool_sort(t);
+}
+
+/* raw = 1 when loading a save file: cycle edit must not redirect the write. */
+static int set_track(e1_engine_t *e, int ti, const char *key, const char *val, int raw)
+{
+    e1_track_t *t = &e->t[ti];
+    int lane, p;
+    uint16_t em = raw ? 0 : t->edit_mask;
+
+    /* c<N>.<key> */
+    if (key[0] == 'c' && key[1] >= '0' && key[1] <= '9') {
+        const char *dot = strchr(key, '.');
+        if (dot) {
+            int c = atoi(key + 1) - 1;
+            const char *k = dot + 1;
+            if (c < 0 || c >= E1_CYCLES) return 0;
+            if (strcmp(k, "add") == 0) { t->cadd[c] = strtoull(val, NULL, 16); return 1; }
+            if (strcmp(k, "del") == 0) { t->cdel[c] = strtoull(val, NULL, 16); return 1; }
+            if ((lane = parse_lane(k, "cc")) >= 0) { t->cc_cyc[c][lane] = (int16_t)clampi(atoi(val), -127, 127); return 1; }
+            if ((p = find_param(k)) >= 0 && (P[p].flags & F_CYC)) {
+                t->cyc[c][p] = (int16_t)clampi(atoi(val), P[p].lo - P[p].hi, P[p].hi - P[p].lo);
+                return 1;
+            }
+            return 0;
+        }
+    }
+    /* r.<key> */
+    if (key[0] == 'r' && key[1] == '.') {
+        const char *k = key + 2;
+        int v;
+        if ((lane = parse_lane(k, "cc")) >= 0) {
+            if (!parse_value(val, t->cc_rnd[lane], -100, 100, NULL, &v)) return 0;
+            t->cc_rnd[lane] = (int8_t)v; return 1;
+        }
+        if ((p = find_param(k)) >= 0 && (P[p].flags & (F_RC | F_RR))) {
+            if (!parse_value(val, t->rnd[p], -100, 100, NULL, &v)) return 0;
+            t->rnd[p] = (int8_t)v; return 1;
+        }
+        return 0;
+    }
     if ((lane = parse_lane(key, "cc")) >= 0) {
         int v;
-        if (!parse_value(val, t->cc_val[lane], -1, 127, NULL, &v)) return 0;
-        t->cc_val[lane] = (int8_t)v;
-        if (v >= 0) t->cc_dirty |= (1u << lane);
+        if (em && t->cc_val[lane] >= 0) {
+            for (int c = 0; c < E1_CYCLES; c++) {
+                if (!(em & (1u << c))) continue;
+                int cur = clampi(t->cc_val[lane] + t->cc_cyc[c][lane], 0, 127);
+                if (!parse_value(val, cur, 0, 127, NULL, &v)) return 0;
+                t->cc_cyc[c][lane] = (int16_t)(v - t->cc_val[lane]);
+            }
+        } else {
+            if (!parse_value(val, t->cc_val[lane], -1, 127, NULL, &v)) return 0;
+            t->cc_val[lane] = (int16_t)v;
+        }
+        if (t->cc_val[lane] >= 0) t->cc_dirty |= (1u << lane);
         return 1;
     }
     if ((lane = parse_lane(key, "ccn")) >= 0) {
@@ -594,48 +1075,86 @@ static int set_track(e1_engine_t *e, e1_track_t *t, const char *key, const char 
         if (t->cc_val[lane] >= 0) t->cc_dirty |= (1u << lane);
         return 1;
     }
-    if (strcmp(key, "toggle") == 0) { e1_toggle_step(t, atoi(val)); return 1; }
+    if (strcmp(key, "toggle") == 0) { toggle_step(e, ti, atoi(val)); return 1; }
     if (strcmp(key, "addmask") == 0) { t->add_mask = strtoull(val, NULL, 16); return 1; }
     if (strcmp(key, "delmask") == 0) { t->del_mask = strtoull(val, NULL, 16); return 1; }
-    if (strcmp(key, "clearedits") == 0) { t->add_mask = t->del_mask = 0; return 1; }
-
-    const pdesc_t *d = find_param(key);
-    if (!d) return 0;
-    int hi = d->hi;
-    if (strcmp(key, "pulses") == 0) hi = t->steps;
-    if (strcmp(key, "rotate") == 0) hi = t->steps > 0 ? t->steps - 1 : 0;
-    int cur = read_stored(t, d) + d->api_bias;
-    int v;
-    if (!parse_value(val, cur, d->lo, hi, d->names, &v)) return 0;
-    int old_div = t->division;
-    int old_mute = t->muted;
-    write_stored(t, d, v - d->api_bias);
-
-    if (strcmp(key, "steps") == 0) {
-        if (t->pulses > t->steps) t->pulses = t->steps;
-        if (t->rotate >= t->steps) t->rotate = (uint8_t)(t->steps - 1);
-        uint64_t keep = t->steps >= 64 ? ~0ULL : ((1ULL << t->steps) - 1);
-        t->add_mask &= keep; t->del_mask &= keep;
-    } else if (strcmp(key, "pulses") == 0) {
-        t->del_mask = 0;   /* removed generated hits come back, as on the T-1 */
-    } else if (strcmp(key, "division") == 0 && old_div != t->division) {
-        reanchor(e, t);
-    } else if (strcmp(key, "type") == 0) {
-        t->gate_open = 0;
+    if (strcmp(key, "clearedits") == 0) {
+        if (em) { for (int c = 0; c < E1_CYCLES; c++) if (em & (1u << c)) t->cadd[c] = t->cdel[c] = 0; }
+        else t->add_mask = t->del_mask = 0;
+        return 1;
     }
-    (void)old_mute;
+    if (strcmp(key, "pool") == 0) { pool_parse(t, val); return 1; }
+    if (strcmp(key, "pooltoggle") == 0) { pool_toggle(t, atoi(val)); return 1; }
+    if (strcmp(key, "name") == 0) {
+        snprintf(t->name, sizeof t->name, "%s", val);
+        for (char *q = t->name; *q; q++) if ((unsigned char)*q < 0x20 || *q == 0x7F || *q == '=' || *q == '"' || *q == '\\') *q = ' ';
+        return 1;
+    }
+    if (strcmp(key, "edit") == 0) {
+        t->edit_mask = (uint16_t)strtoul(val, NULL, 16);
+        return 1;
+    }
+    if (strcmp(key, "clearcycle") == 0) {
+        int c = atoi(val) - 1;
+        if (c < 0 || c >= E1_CYCLES) return 0;
+        memset(t->cyc[c], 0, sizeof t->cyc[c]);
+        memset(t->cc_cyc[c], 0, sizeof t->cc_cyc[c]);
+        t->cadd[c] = t->cdel[c] = 0;
+        return 1;
+    }
+    if (strcmp(key, "copycycle") == 0) {
+        int a = 0, b = 0;
+        if (sscanf(val, "%d %d", &a, &b) != 2) return 0;
+        a--; b--;
+        if (a < 0 || b < 0 || a >= E1_CYCLES || b >= E1_CYCLES) return 0;
+        memcpy(t->cyc[b], t->cyc[a], sizeof t->cyc[a]);
+        memcpy(t->cc_cyc[b], t->cc_cyc[a], sizeof t->cc_cyc[a]);
+        t->cadd[b] = t->cadd[a]; t->cdel[b] = t->cdel[a];
+        return 1;
+    }
+    if (strcmp(key, "clearparam") == 0) {
+        if ((lane = parse_lane(val, "cc")) >= 0) { for (int c = 0; c < E1_CYCLES; c++) t->cc_cyc[c][lane] = 0; t->cc_rnd[lane] = 0; return 1; }
+        if ((p = find_param(val)) < 0) return 0;
+        for (int c = 0; c < E1_CYCLES; c++) t->cyc[c][p] = 0;
+        t->rnd[p] = 0;
+        return 1;
+    }
+    if (strcmp(key, "clearrandom") == 0) {
+        memset(t->rnd, 0, sizeof t->rnd);
+        memset(t->cc_rnd, 0, sizeof t->cc_rnd);
+        return 1;
+    }
+
+    if ((p = find_param(key)) < 0) return 0;
+    const pdesc_t *d = &P[p];
+    int v;
+    if (em && (d->flags & F_CYC)) {
+        for (int c = 0; c < E1_CYCLES; c++) {
+            if (!(em & (1u << c))) continue;
+            int cur = clampi(t->v[p] + t->cyc[c][p], d->lo, d->hi);
+            if (!parse_value(val, cur, d->lo, d->hi, d->names, &v)) return 0;
+            t->cyc[c][p] = (int16_t)(v - t->v[p]);
+        }
+        return 1;
+    }
+    if (!parse_value(val, t->v[p], d->lo, d->hi, d->names, &v)) return 0;
+    int old = t->v[p];
+    t->v[p] = (int16_t)v;
+    if (raw) return 1;
+    if (p == E1_P_PULSES && v != old) t->del_mask = 0;      /* removed hits come back, as on the T-1 */
+    if (p == E1_P_CYCLES && t->cur_cycle >= v) t->cur_cycle = 0;
     return 1;
 }
 
 static int set_global(e1_engine_t *e, const char *key, const char *val)
 {
-    int v;
     if (strcmp(key, "dest") == 0) {
+        int v;
         if (!parse_value(val, e->dest, 0, 2, DEST_NAMES, &v)) return 0;
-        e->dest = (uint8_t)v; return 1;
+        e->dest = (uint8_t)v;
+        return 1;
     }
     if (strcmp(key, "seed") == 0) { e->seed = (uint32_t)strtoul(val, NULL, 10); return 1; }
-    if (strcmp(key, "fillheld") == 0) { e1_perf(e, 0xFFFF, "fill", atoi(val)); return 1; }
     return 0;
 }
 
@@ -644,11 +1163,22 @@ int e1_set(e1_engine_t *e, int track, const char *key, const char *val)
     if (!key || !val) return 0;
     if (track < 0) return set_global(e, key, val);
     if (track >= E1_TRACKS) return 0;
-    e1_track_t *t = &e->t[track];
-    int was_muted = t->muted;
-    int ok = set_track(e, t, key, val);
-    (void)was_muted;
-    return ok;
+    return set_track(e, track, key, val, 0);
+}
+
+static int shown(const e1_engine_t *e, int ti, int p)
+{
+    const e1_track_t *t = &e->t[ti];
+    int c = t->edit_mask ? lowest_bit(t->edit_mask) : -1;
+    int v = t->v[p];
+    if (c >= 0 && (P[p].flags & F_CYC)) v += t->cyc[c][p];
+    return clampi(v, P[p].lo, P[p].hi);
+}
+
+int e1_get_num(const e1_engine_t *e, int track, int i)
+{
+    if (track < 0 || track >= E1_TRACKS || i < 0 || i >= E1_NP) return 0;
+    return shown(e, track, i);
 }
 
 int e1_get(const e1_engine_t *e, int track, const char *key, char *buf, int len)
@@ -661,63 +1191,80 @@ int e1_get(const e1_engine_t *e, int track, const char *key, char *buf, int len)
     }
     if (track >= E1_TRACKS) return -1;
     const e1_track_t *t = &e->t[track];
-    int lane;
-    if ((lane = parse_lane(key, "cc")) >= 0) return snprintf(buf, (size_t)len, "%d", t->cc_val[lane]);
-    if ((lane = parse_lane(key, "ccn")) >= 0) return snprintf(buf, (size_t)len, "%d", t->cc_num[lane]);
-    if (strcmp(key, "hits") == 0)
-        return snprintf(buf, (size_t)len, "%llx", (unsigned long long)e1_hit_mask(t, 0));
-    if (strcmp(key, "addmask") == 0) return snprintf(buf, (size_t)len, "%llx", (unsigned long long)t->add_mask);
-    if (strcmp(key, "delmask") == 0) return snprintf(buf, (size_t)len, "%llx", (unsigned long long)t->del_mask);
-    const pdesc_t *d = find_param(key);
-    if (!d) return -1;
-    int v = read_stored(t, d) + d->api_bias;
-    if (d->names) {
-        int idx = v - d->lo;
-        if (idx < 0 || idx >= enum_count(d)) idx = 0;
-        return snprintf(buf, (size_t)len, "%s", d->names[idx]);
+    int lane, p;
+    if (key[0] == 'r' && key[1] == '.') {
+        if ((lane = parse_lane(key + 2, "cc")) >= 0) return snprintf(buf, (size_t)len, "%d", t->cc_rnd[lane]);
+        if ((p = find_param(key + 2)) >= 0) return snprintf(buf, (size_t)len, "%d", t->rnd[p]);
+        return -1;
     }
+    if ((lane = parse_lane(key, "cc")) >= 0) {
+        int c = t->edit_mask ? lowest_bit(t->edit_mask) : -1;
+        int v = t->cc_val[lane];
+        if (v >= 0 && c >= 0) v = clampi(v + t->cc_cyc[c][lane], 0, 127);
+        return snprintf(buf, (size_t)len, "%d", v);
+    }
+    if ((lane = parse_lane(key, "ccn")) >= 0) return snprintf(buf, (size_t)len, "%d", t->cc_num[lane]);
+    if (strcmp(key, "name") == 0) return snprintf(buf, (size_t)len, "%s", t->name);
+    if (strcmp(key, "pool") == 0) {
+        int pos = 0;
+        buf[0] = 0;
+        for (int i = 0; i < t->pool_n && pos < len - 5; i++)
+            pos += snprintf(buf + pos, (size_t)(len - pos), "%s%d", i ? "," : "", t->pool[i]);
+        return pos;
+    }
+    if ((p = find_param(key)) < 0) return -1;
+    int v = shown(e, track, p);
+    if (P[p].names) return snprintf(buf, (size_t)len, "%s", P[p].names[v - P[p].lo]);
     return snprintf(buf, (size_t)len, "%d", v);
 }
 
-int e1_param_count(void) { return N_TRACK_PARAMS; }
-const char *e1_param_key(int i) { return (i >= 0 && i < N_TRACK_PARAMS) ? TRACK_PARAMS[i].key : NULL; }
+/* ------------------------------------------------------------ save text */
 
-int e1_get_num(const e1_engine_t *e, int track, int i)
+static int appendf(char *buf, int len, int pos, const char *fmt, ...)
+    __attribute__((format(printf, 4, 5)));
+#include <stdarg.h>
+static int appendf(char *buf, int len, int pos, const char *fmt, ...)
 {
-    if (track < 0 || track >= E1_TRACKS || i < 0 || i >= N_TRACK_PARAMS) return 0;
-    return read_stored(&e->t[track], &TRACK_PARAMS[i]) + TRACK_PARAMS[i].api_bias;
-}
-
-/* ---------------------------------------------------------- persistence */
-
-static int appendf(char *buf, int len, int pos, const char *fmt, const char *k, const char *v)
-{
-    if (pos >= len) return pos;
-    int n = snprintf(buf + pos, (size_t)(len - pos), fmt, k, v);
+    if (pos >= len - 1) return pos;
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(buf + pos, (size_t)(len - pos), fmt, ap);
+    va_end(ap);
     if (n < 0) return pos;
-    return pos + n;
+    return pos + n >= len ? len - 1 : pos + n;
 }
 
 int e1_dump_track(const e1_engine_t *e, int track, char *buf, int len)
 {
     if (track < 0 || track >= E1_TRACKS || len <= 0) return 0;
-    char v[32];
+    const e1_track_t *t = &e->t[track];
     int pos = 0;
     buf[0] = 0;
-    for (int i = 0; i < N_TRACK_PARAMS; i++) {
-        e1_get(e, track, TRACK_PARAMS[i].key, v, sizeof v);
-        pos = appendf(buf, len, pos, "%s=%s\n", TRACK_PARAMS[i].key, v);
+    pos = appendf(buf, len, pos, "name=%s\n", t->name);
+    for (int p = 0; p < E1_NP; p++) {
+        if (P[p].names) pos = appendf(buf, len, pos, "%s=%s\n", P[p].key, P[p].names[clampi(t->v[p], P[p].lo, P[p].hi) - P[p].lo]);
+        else pos = appendf(buf, len, pos, "%s=%d\n", P[p].key, t->v[p]);
+        if (t->rnd[p]) pos = appendf(buf, len, pos, "r.%s=%d\n", P[p].key, t->rnd[p]);
     }
-    char k[16];
+    pos = appendf(buf, len, pos, "pool=");
+    for (int i = 0; i < t->pool_n; i++) pos = appendf(buf, len, pos, "%s%d", i ? "," : "", t->pool[i]);
+    pos = appendf(buf, len, pos, "\n");
+    if (t->add_mask) pos = appendf(buf, len, pos, "addmask=%llx\n", (unsigned long long)t->add_mask);
+    if (t->del_mask) pos = appendf(buf, len, pos, "delmask=%llx\n", (unsigned long long)t->del_mask);
     for (int l = 0; l < E1_CC_LANES; l++) {
-        snprintf(k, sizeof k, "cc%d", l + 1);  e1_get(e, track, k, v, sizeof v);
-        pos = appendf(buf, len, pos, "%s=%s\n", k, v);
-        snprintf(k, sizeof k, "ccn%d", l + 1); e1_get(e, track, k, v, sizeof v);
-        pos = appendf(buf, len, pos, "%s=%s\n", k, v);
+        pos = appendf(buf, len, pos, "ccn%d=%d\n", l + 1, t->cc_num[l]);
+        if (t->cc_val[l] >= 0) pos = appendf(buf, len, pos, "cc%d=%d\n", l + 1, t->cc_val[l]);
+        if (t->cc_rnd[l]) pos = appendf(buf, len, pos, "r.cc%d=%d\n", l + 1, t->cc_rnd[l]);
     }
-    e1_get(e, track, "addmask", v, sizeof v); pos = appendf(buf, len, pos, "%s=%s\n", "addmask", v);
-    e1_get(e, track, "delmask", v, sizeof v); pos = appendf(buf, len, pos, "%s=%s\n", "delmask", v);
-    return pos < len ? pos : len - 1;
+    for (int c = 0; c < E1_CYCLES; c++) {
+        for (int p = 0; p < E1_NP; p++)
+            if (t->cyc[c][p]) pos = appendf(buf, len, pos, "c%d.%s=%d\n", c + 1, P[p].key, t->cyc[c][p]);
+        for (int l = 0; l < E1_CC_LANES; l++)
+            if (t->cc_cyc[c][l]) pos = appendf(buf, len, pos, "c%d.cc%d=%d\n", c + 1, l + 1, t->cc_cyc[c][l]);
+        if (t->cadd[c]) pos = appendf(buf, len, pos, "c%d.add=%llx\n", c + 1, (unsigned long long)t->cadd[c]);
+        if (t->cdel[c]) pos = appendf(buf, len, pos, "c%d.del=%llx\n", c + 1, (unsigned long long)t->cdel[c]);
+    }
+    return pos;
 }
 
 int e1_dump_global(const e1_engine_t *e, char *buf, int len)
@@ -726,28 +1273,47 @@ int e1_dump_global(const e1_engine_t *e, char *buf, int len)
     return snprintf(buf, (size_t)len, "dest=%s\nseed=%u\n", DEST_NAMES[e->dest % 3], (unsigned)e->seed);
 }
 
-void e1_load_lines(e1_engine_t *e, int track, const char *text)
+typedef int (*line_fn)(e1_engine_t *e, int track, const char *key, const char *val);
+
+static void each_line(e1_engine_t *e, int track, const char *text, line_fn fn)
 {
-    if (!text) return;
-    char line[96];
+    char line[160];
     const char *p = text;
-    /* Steps first, so pulses and rotate are clamped against the right length. */
-    for (int pass = 0; pass < 2; pass++) {
-        p = text;
-        while (*p) {
-            const char *nl = strchr(p, '\n');
-            size_t n = nl ? (size_t)(nl - p) : strlen(p);
-            if (n >= sizeof line) n = sizeof line - 1;
-            memcpy(line, p, n); line[n] = 0;
-            char *eq = strchr(line, '=');
-            if (eq) {
-                *eq = 0;
-                int is_steps = strcmp(line, "steps") == 0;
-                if ((pass == 0) == is_steps) e1_set(e, track, line, eq + 1);
-            }
-            if (!nl) break;
-            p = nl + 1;
-        }
+    while (p && *p) {
+        const char *nl = strchr(p, '\n');
+        size_t n = nl ? (size_t)(nl - p) : strlen(p);
+        if (n >= sizeof line) n = sizeof line - 1;
+        memcpy(line, p, n);
+        line[n] = 0;
+        if (n && line[n - 1] == '\r') line[n - 1] = 0;
+        char *eq = strchr(line, '=');
+        if (eq) { *eq = 0; fn(e, track, line, eq + 1); }
+        p = nl ? nl + 1 : NULL;
     }
-    if (track >= 0 && track < E1_TRACKS) e->t[track].cc_dirty = 0;
+}
+
+static int load_line(e1_engine_t *e, int track, const char *key, const char *val)
+{
+    return set_track(e, track, key, val, 1);
+}
+static int load_gline(e1_engine_t *e, int track, const char *key, const char *val)
+{
+    (void)track;
+    return set_global(e, key, val);
+}
+
+void e1_load_track(e1_engine_t *e, int track, const char *text)
+{
+    if (track < 0 || track >= E1_TRACKS || !text) return;
+    /* Reset the saved part only; a playing track keeps its place. */
+    e1_track_t fresh;
+    e1_track_defaults(&fresh, track);
+    e1_copy_stored(&e->t[track], &fresh);
+    each_line(e, track, text, load_line);
+    for (int l = 0; l < E1_CC_LANES; l++) if (e->t[track].cc_val[l] >= 0) e->t[track].cc_dirty |= 1u << l;
+}
+
+void e1_load_global(e1_engine_t *e, const char *text)
+{
+    if (text) each_line(e, -1, text, load_gline);
 }
