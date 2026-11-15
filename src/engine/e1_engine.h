@@ -17,6 +17,7 @@
 #define E1_ENGINE_H
 
 #include <stdint.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -96,13 +97,36 @@ typedef struct {
     int8_t  cc_target[E1_CC_LANES];
     uint32_t cc_dirty;             /* lanes edited since last send (on-change) */
     uint8_t flash;                 /* set when the track fired, UI clears */
+
+    /* sequence position: s = k - step_off counts played steps */
+    int64_t step_off;
+    int64_t last_s;
+
+    /* performance moves (runtime, never saved) */
+    uint8_t p_fill;        /* add fill pulses */
+    uint8_t p_ratchet;     /* 0/1 off, 2..4 hits per step */
+    int8_t  p_speed;       /* -1 half time, 0, +1 double time */
+    uint8_t p_reverse;
+    uint8_t p_freeze;      /* 0 off, else loop the last N steps */
+    int64_t freeze_s0;
+    uint8_t p_thin;        /* drop about half the hits */
+    uint8_t p_accent;      /* velocity 127 */
+    uint8_t p_solo_mute;   /* silenced by someone else's solo */
+
+    /* ratchet in flight */
+    uint8_t rat_left;
+    uint8_t rat_vel;
+    double  rat_next, rat_dt, rat_len;
 } e1_track_t;
+
+/* Stored (saved) fields end where the runtime block starts. */
+#define E1_TRACK_STORED_BYTES offsetof(e1_track_t, next_k)
 
 typedef struct {
     e1_track_t t[E1_TRACKS];
     uint8_t dest;          /* E1_DEST_* */
     uint32_t seed;
-    uint8_t fill_held;     /* Perform: fill active */
+    uint8_t fill_held;     /* unused, kept for layout; fills are per track */
     int running;
     double tick;           /* last tick advanced to */
     double origin;         /* tick at which step slot 0 played */
@@ -124,6 +148,21 @@ void e1_stop(e1_engine_t *e, e1_emit_fn emit, void *user);
 
 /* Run every event with time <= tick_now. Call once per block. */
 void e1_advance(e1_engine_t *e, double tick_now, e1_emit_fn emit, void *user);
+
+/* Performance moves on every track whose bit is set in `mask`.
+ *   move: "fill", "ratchet" (2..4, 0 off), "speed" (-1, 0, 1), "reverse",
+ *         "freeze" (steps to loop, 0 off), "thin", "accent", "solo" (1 on,
+ *         0 off: tracks outside mask fall silent), "restart" (next step is
+ *         step 1), "rotate" (adds value to Rotate, a saved edit), "clear"
+ *         (every move off). */
+void e1_perf(e1_engine_t *e, uint32_t mask, const char *move, int value);
+
+/* Copy only the saved fields of a track (pattern recall, Temp restore).
+ * Runtime state such as position and sounding notes is kept. */
+void e1_copy_stored(e1_track_t *dst, const e1_track_t *src);
+
+/* Keep a running track's step continuity after its Division changed under it. */
+void e1_reanchor(e1_engine_t *e, int track);
 
 /* Close any sounding notes (used on stop, mute, unload). */
 void e1_all_notes_off(e1_engine_t *e, e1_emit_fn emit, void *user);

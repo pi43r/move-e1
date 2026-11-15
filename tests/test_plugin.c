@@ -79,6 +79,36 @@ int main(void) {
     for (int i = 0; i < 400; i++) api->render_block(inst, audio, 128);
     CHECK(n_move > was);
 
+    /* Pattern recall lands on the bar line */
+    api->set_param(inst, "clock", "Internal"); api->set_param(inst, "dest", "Move");
+    api->set_param(inst, "play", "1");
+    for (int i = 0; i < 100; i++) api->render_block(inst, audio, 128);    /* mid bar */
+    api->set_param(inst, "stage:1", "steps=7\npulses=3\n");
+    api->set_param(inst, "commit", "bar");
+    api->get_param(inst, "t1:steps", buf, sizeof buf); CHECK(strcmp(buf, "7") != 0);
+    for (int i = 0; i < 1500; i++) api->render_block(inst, audio, 128);   /* 97 bpm: over a bar */
+    api->get_param(inst, "t1:steps", buf, sizeof buf); CHECK(strcmp(buf, "7") == 0);
+    e1_inst_t *S = (e1_inst_t *)inst;
+    CHECK(S->commit == 0);
+
+    /* Temp: edits made while held snap back on release */
+    api->set_param(inst, "temp", "1");
+    api->set_param(inst, "t1:pulses", "1");
+    api->set_param(inst, "t2:division", "1/8T");
+    api->set_param(inst, "temp", "0");
+    api->get_param(inst, "t1:pulses", buf, sizeof buf); CHECK(strcmp(buf, "3") == 0);
+    api->get_param(inst, "t2:division", buf, sizeof buf); CHECK(strcmp(buf, "1/16") == 0);
+    api->set_param(inst, "temp", "1"); api->set_param(inst, "t1:pulses", "2"); api->set_param(inst, "temp", "keep");
+    api->get_param(inst, "t1:pulses", buf, sizeof buf); CHECK(strcmp(buf, "2") == 0);
+
+    /* Perform moves by mask */
+    api->set_param(inst, "perf:ratchet", "3 4");
+    CHECK(S->e.t[0].p_ratchet == 4 && S->e.t[1].p_ratchet == 4 && S->e.t[2].p_ratchet == 0);
+    n = api->get_param(inst, "ui", buf, sizeof buf);
+    CHECK(n > 0 && strstr(buf, "\"pf\":3,"));
+    api->set_param(inst, "perf:clear", "ffff 0");
+    CHECK(S->e.t[0].p_ratchet == 0);
+
     api->destroy_instance(inst);
     printf("%d/%d plugin checks passed\n", checks - fails, checks);
     return fails ? 1 : 0;

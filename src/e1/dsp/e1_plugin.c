@@ -24,7 +24,7 @@ enum { CLOCK_MOVE = 0, CLOCK_INTERNAL = 1, CLOCK_COMPUTER = 2 };
 static const char *const CLOCK_NAMES[] = { "Move", "Internal", "Computer" };
 
 #define QSIZE 512                 /* packets per port, power of two */
-#define MOVE_BUDGET 4             /* packets per block into Move */
+#define MOVE_BUDGET 6             /* packets per block into Move */
 #define COMPUTER_BUDGET 16        /* packets per block to USB-C */
 
 typedef struct {
@@ -50,6 +50,17 @@ typedef struct {
     uint32_t ext_samples_since;
 
     int focus;
+
+    /* Pattern recall: tracks are loaded into `stage`, then copied into the
+     * live engine on the next bar (or at once when stopped). */
+    e1_engine_t stage;
+    uint32_t stage_mask;
+    int commit;                   /* 0 none, 1 next bar, 2 now */
+    double last_tick;
+
+    /* Temp: saved fields of every track while Sample is held */
+    e1_track_t temp_bak[E1_TRACKS];
+    int temp_on;
 } e1_inst_t;
 
 static const host_api_v1_t *g_host = NULL;
@@ -150,6 +161,39 @@ static void e1_on_midi(void *inst, const uint8_t *msg, int len, int source)
     }
 }
 
+/* ------------------------------------------------------- pattern recall */
+
+static void apply_stage(e1_inst_t *s)
+{
+    for (int i = 0; i < E1_TRACKS; i++) {
+        if (!(s->stage_mask & (1u << i))) continue;
+        e1_track_t *t = &s->e.t[i];
+        const e1_track_t *n = &s->stage.t[i];
+        if (t->gate_open && (n->note != t->note || n->channel != t->channel || n->type != t->type || n->muted))
+            emit(s, t->gate_ports, (uint8_t)(0x80 | t->gate_ch), t->gate_note, 0), t->gate_open = 0;
+        int div_changed = n->division != t->division;
+        e1_copy_stored(t, n);
+        if (div_changed) e1_reanchor(&s->e, i);
+        if (t->type == E1_TYPE_CC) for (int l = 0; l < E1_CC_LANES; l++) if (t->cc_val[l] >= 0) t->cc_dirty |= 1u << l;
+    }
+    s->stage_mask = 0;
+    s->commit = 0;
+}
+
+/* Advance to tick_now, applying a queued pattern exactly on the bar line. */
+static void advance_to(e1_inst_t *s, double tick_now)
+{
+    if (s->commit == 2 || (s->commit == 1 && !s->e.running)) apply_stage(s);
+    if (s->commit == 1 && s->e.running) {
+        double bar = (floor((s->e.tick - s->e.origin) / E1_TICKS_PER_BAR + 1e-9) + 1.0) * E1_TICKS_PER_BAR + s->e.origin;
+        if (tick_now >= bar) {
+            e1_advance(&s->e, bar - 1e-6, emit, s);
+            apply_stage(s);
+        }
+    }
+    e1_advance(&s->e, tick_now, emit, s);
+}
+
 /* ------------------------------------------------------------- render */
 
 static void run_follow(e1_inst_t *s, int frames)
@@ -174,7 +218,7 @@ static void run_follow(e1_inst_t *s, int frames)
 
     if (running && !s->e.running) e1_join(&s->e, 0.0, tick);   /* bars line up with Move */
     else if (!running && s->e.running) e1_stop(&s->e, emit, s);
-    e1_advance(&s->e, tick, emit, s);
+    advance_to(s, tick);
 }
 
 static void run_internal(e1_inst_t *s, int frames)
@@ -197,13 +241,13 @@ static void run_internal(e1_inst_t *s, int frames)
             while (s->next_clock_tick <= end) s->next_clock_tick += E1_PPQN / 24;
         }
         s->itick = end;
-        e1_advance(&s->e, s->itick, emit, s);
+        advance_to(s, s->itick);
     } else {
         if (s->e.running) {
             e1_stop(&s->e, emit, s);
             if (s->clock_out && computer_wanted(s)) realtime_out(s, 0xFC);
         }
-        e1_advance(&s->e, s->itick, emit, s);   /* live CC edits still go out */
+        advance_to(s, s->itick);   /* live CC edits still go out */
     }
 }
 
@@ -307,7 +351,51 @@ static void e1_set_param(void *inst, const char *key, const char *val)
     }
     if (strcmp(key, "clockout") == 0) { s->clock_out = atoi(val) != 0; return; }
     if (strcmp(key, "panic") == 0) { e1_all_notes_off(&s->e, emit, s); return; }
-    if (strcmp(key, "fill") == 0) { s->e.fill_held = (uint8_t)(atoi(val) != 0); return; }
+    if (strncmp(key, "perf:", 5) == 0) {
+        /* "perf:<move>" = "<mask hex> <value>" */
+        char *end = NULL;
+        unsigned long mask = strtoul(val, &end, 16);
+        int v = (end && *end) ? atoi(end) : 0;
+        e1_perf(&s->e, (uint32_t)mask, key + 5, v);
+        if (strcmp(key + 5, "solo") == 0 || strcmp(key + 5, "clear") == 0 || strcmp(key + 5, "thin") == 0) {
+            /* silenced tracks must not leave notes hanging */
+            for (int i = 0; i < E1_TRACKS; i++) {
+                e1_track_t *t = &s->e.t[i];
+                if (t->gate_open && t->p_solo_mute) emit(s, t->gate_ports, (uint8_t)(0x80 | t->gate_ch), t->gate_note, 0), t->gate_open = 0;
+            }
+        }
+        return;
+    }
+    if (strncmp(key, "stage:", 6) == 0) {
+        int n = atoi(key + 6) - 1;
+        if (n >= 0 && n < E1_TRACKS) {
+            e1_track_defaults(&s->stage.t[n], n);
+            e1_load_lines(&s->stage, n, val);
+            s->stage_mask |= 1u << n;
+        }
+        return;
+    }
+    if (strcmp(key, "commit") == 0) { s->commit = strcmp(val, "now") == 0 ? 2 : (strcmp(val, "cancel") == 0 ? 0 : 1); if (!s->commit) s->stage_mask = 0; return; }
+    if (strcmp(key, "temp") == 0) {
+        if (strcmp(val, "1") == 0 && !s->temp_on) {
+            for (int i = 0; i < E1_TRACKS; i++) e1_copy_stored(&s->temp_bak[i], &s->e.t[i]);
+            s->temp_on = 1;
+        } else if (strcmp(val, "0") == 0 && s->temp_on) {
+            for (int i = 0; i < E1_TRACKS; i++) {
+                e1_track_t *t = &s->e.t[i];
+                const e1_track_t *b = &s->temp_bak[i];
+                if (t->gate_open && (b->note != t->note || b->channel != t->channel || b->type != t->type))
+                    emit(s, t->gate_ports, (uint8_t)(0x80 | t->gate_ch), t->gate_note, 0), t->gate_open = 0;
+                int div_changed = b->division != t->division;
+                e1_copy_stored(t, b);
+                if (div_changed) e1_reanchor(&s->e, i);
+            }
+            s->temp_on = 0;
+        } else if (strcmp(val, "keep") == 0) {
+            s->temp_on = 0;
+        }
+        return;
+    }
     if (strcmp(key, "dest") == 0) {
         e1_all_notes_off(&s->e, emit, s);          /* close notes on the old port */
         e1_set(&s->e, -1, "dest", val);
@@ -332,10 +420,17 @@ static int json_ui(e1_inst_t *s, char *buf, int len)
         s->e.running, s->clock, (double)s->bpm, s->e.dest, s->clock_out, s->focus + 1,
         (unsigned)flash, (unsigned)mute, (unsigned)type, tick,
         (unsigned)(s->q_move.dropped + s->q_comp.dropped));
+    uint32_t pf = 0;
+    for (int i = 0; i < E1_TRACKS; i++) {
+        const e1_track_t *t = &s->e.t[i];
+        if (t->p_fill || t->p_ratchet || t->p_speed || t->p_reverse || t->p_freeze || t->p_thin || t->p_accent) pf |= 1u << i;
+        if (t->p_solo_mute) pf |= 1u << (16 + i);
+    }
+    PUT("\"pf\":%u,\"tmp\":%d,\"q\":%d,", (unsigned)pf, s->temp_on, s->commit);
     PUT("\"st\":[");
     for (int i = 0; i < E1_TRACKS; i++) PUT("%s%d", i ? "," : "", s->e.t[i].cur_step);
     const e1_track_t *f = &s->e.t[s->focus];
-    PUT("],\"h\":\"%llx\",\"p\":[", (unsigned long long)e1_hit_mask(f, s->e.fill_held));
+    PUT("],\"h\":\"%llx\",\"p\":[", (unsigned long long)e1_hit_mask(f, f->p_fill));
     for (int i = 0; i < e1_param_count(); i++) PUT("%s%d", i ? "," : "", e1_get_num(&s->e, s->focus, i));
     PUT("],\"cv\":[");
     for (int i = 0; i < E1_CC_LANES; i++) PUT("%s%d", i ? "," : "", f->cc_val[i]);

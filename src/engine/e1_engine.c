@@ -183,9 +183,17 @@ int e1_ports(const e1_engine_t *e, const e1_track_t *t)
 
 /* ------------------------------------------------------------- transport */
 
-static double slot_ticks(const e1_track_t *t)
+static double base_ticks(const e1_track_t *t)
 {
     return (double)e1_division_ticks[t->division < E1_DIVISIONS ? t->division : 4];
+}
+
+static double slot_ticks(const e1_track_t *t)
+{
+    double st = base_ticks(t);
+    if (t->p_speed < 0) st *= 2.0;
+    else if (t->p_speed > 0) st *= 0.5;
+    return st;
 }
 
 static double slot_time(const e1_engine_t *e, const e1_track_t *t, int64_t k, double origin)
@@ -197,16 +205,49 @@ static double slot_time(const e1_engine_t *e, const e1_track_t *t, int64_t k, do
     return tm;
 }
 
-static int slot_step(const e1_track_t *t, int64_t k)
+static int64_t mod64(int64_t a, int64_t m) { int64_t r = a % m; return r < 0 ? r + m : r; }
+
+/* Sequence position after Freeze. */
+static int64_t effective_s(const e1_track_t *t, int64_t s)
+{
+    if (t->p_freeze > 0 && s >= t->freeze_s0)
+        return t->freeze_s0 + mod64(s - t->freeze_s0, t->p_freeze);
+    return s;
+}
+
+static int slot_step(const e1_track_t *t, int64_t s)
 {
     int steps = t->steps < 1 ? 1 : t->steps;
     int bars = e1_length_bars[t->length < E1_LENGTHS ? t->length : 0];
+    int step;
     if (bars > 0) {
-        int64_t per = (int64_t)((double)(bars * E1_TICKS_PER_BAR) / slot_ticks(t));
+        int64_t per = (int64_t)((double)(bars * E1_TICKS_PER_BAR) / base_ticks(t));
         if (per < 1) per = 1;
-        return (int)((k % per) % steps);
+        step = (int)(mod64(s, per) % steps);
+    } else {
+        step = (int)mod64(s, steps);
     }
-    return (int)(k % steps);
+    if (t->p_reverse) step = steps - 1 - step;
+    return step;
+}
+
+/* Re-anchor a running track after its step length changed (Division, half
+ * or double time), so it carries on with the next step instead of jumping
+ * to wherever the new grid would put it. */
+static void reanchor(e1_engine_t *e, e1_track_t *t)
+{
+    if (!e->running) return;
+    double st = slot_ticks(t);
+    int64_t k = (int64_t)ceil((e->tick - e->origin) / st - 1e-9);
+    if (k < 0) k = 0;
+    t->next_k = k;
+    t->step_off = k - (t->last_s + 1);
+    t->rat_left = 0;
+}
+
+void e1_reanchor(e1_engine_t *e, int track)
+{
+    if (track >= 0 && track < E1_TRACKS) reanchor(e, &e->t[track]);
 }
 
 void e1_start(e1_engine_t *e, double tick)
@@ -224,7 +265,10 @@ void e1_join(e1_engine_t *e, double origin, double now)
         double st = slot_ticks(t);
         int64_t k = (int64_t)ceil((now - origin) / st - 1e-9);
         t->next_k = k < 0 ? 0 : k;
+        t->step_off = 0;
+        t->last_s = t->next_k - 1;
         t->cur_step = -1;
+        t->rat_left = 0;
     }
 }
 
@@ -237,7 +281,7 @@ static void note_off(e1_track_t *t, e1_emit_fn emit, void *user)
 
 void e1_all_notes_off(e1_engine_t *e, e1_emit_fn emit, void *user)
 {
-    for (int i = 0; i < E1_TRACKS; i++) note_off(&e->t[i], emit, user);
+    for (int i = 0; i < E1_TRACKS; i++) { note_off(&e->t[i], emit, user); e->t[i].rat_left = 0; }
 }
 
 void e1_stop(e1_engine_t *e, e1_emit_fn emit, void *user)
@@ -245,6 +289,52 @@ void e1_stop(e1_engine_t *e, e1_emit_fn emit, void *user)
     e->running = 0;
     e1_all_notes_off(e, emit, user);
     for (int i = 0; i < E1_TRACKS; i++) e->t[i].cur_step = -1;
+}
+
+void e1_copy_stored(e1_track_t *dst, const e1_track_t *src)
+{
+    memcpy(dst, src, E1_TRACK_STORED_BYTES);
+}
+
+/* -------------------------------------------------------------- perform */
+
+void e1_perf(e1_engine_t *e, uint32_t mask, const char *move, int value)
+{
+    if (!move) return;
+    if (strcmp(move, "solo") == 0) {
+        for (int i = 0; i < E1_TRACKS; i++)
+            e->t[i].p_solo_mute = (uint8_t)(value && !(mask & (1u << i)));
+        return;
+    }
+    for (int i = 0; i < E1_TRACKS; i++) {
+        if (!(mask & (1u << i))) continue;
+        e1_track_t *t = &e->t[i];
+        if (strcmp(move, "fill") == 0) t->p_fill = (uint8_t)(value != 0);
+        else if (strcmp(move, "ratchet") == 0) { t->p_ratchet = (uint8_t)clampi(value, 0, 4); if (t->p_ratchet < 2) t->rat_left = 0; }
+        else if (strcmp(move, "speed") == 0) {
+            int8_t sp = (int8_t)clampi(value, -1, 1);
+            if (sp != t->p_speed) { t->p_speed = sp; reanchor(e, t); }
+        }
+        else if (strcmp(move, "reverse") == 0) t->p_reverse = (uint8_t)(value != 0);
+        else if (strcmp(move, "freeze") == 0) {
+            int n = clampi(value, 0, 64);
+            if (n > 0 && t->p_freeze == 0) t->freeze_s0 = t->last_s - n + 1;
+            t->p_freeze = (uint8_t)n;
+        }
+        else if (strcmp(move, "thin") == 0) t->p_thin = (uint8_t)(value != 0);
+        else if (strcmp(move, "accent") == 0) t->p_accent = (uint8_t)(value != 0);
+        else if (strcmp(move, "restart") == 0) { t->step_off = t->next_k; t->last_s = -1; t->p_freeze = 0; }
+        else if (strcmp(move, "rotate") == 0) {
+            int steps = t->steps < 1 ? 1 : t->steps;
+            t->rotate = (uint8_t)mod64(t->rotate + value, steps);
+        }
+        else if (strcmp(move, "clear") == 0) {
+            t->p_fill = t->p_ratchet = t->p_reverse = t->p_freeze = t->p_thin = t->p_accent = 0;
+            t->rat_left = 0;
+            if (t->p_speed) { t->p_speed = 0; reanchor(e, t); }
+        }
+    }
+    if (strcmp(move, "clear") == 0) for (int i = 0; i < E1_TRACKS; i++) e->t[i].p_solo_mute = 0;
 }
 
 /* --------------------------------------------------------------- advance */
@@ -256,19 +346,39 @@ static void cc_send(e1_track_t *t, int lane, int value, int ports, e1_emit_fn em
     t->cc_sent[lane] = (int16_t)value;
 }
 
+static void note_on(e1_engine_t *e, e1_track_t *t, double when, double len, int vel,
+                    e1_emit_fn emit, void *user)
+{
+    note_off(t, emit, user);
+    int ports = e1_ports(e, t);
+    uint8_t ch = (uint8_t)(t->channel & 0x0F);
+    uint8_t note = t->note & 0x7F;
+    emit(user, ports, (uint8_t)(0x90 | ch), note, (uint8_t)clampi(vel, 1, 127));
+    t->gate_open = 1;
+    t->gate_note = note;
+    t->gate_ch = ch;
+    t->gate_ports = (uint8_t)ports;
+    t->gate_off = when + (len < 1.0 ? 1.0 : len);
+    t->flash = 1;
+}
+
 static void fire_slot(e1_engine_t *e, int ti, e1_track_t *t, int64_t k, double when,
                       e1_emit_fn emit, void *user)
 {
-    int step = slot_step(t, k);
+    int64_t s = k - t->step_off;
+    t->last_s = s;
+    t->rat_left = 0;
+    int64_t se = effective_s(t, s);
+    int step = slot_step(t, se);
     t->cur_step = step;
-    if (!e1_hit(t, step, e->fill_held)) return;
-    if (t->prob < 100 && e1_chance(e->seed, ti, k) >= t->prob) return;
-    if (t->muted) return;
-
-    int ports = e1_ports(e, t);
-    t->flash = 1;
+    if (!e1_hit(t, step, t->p_fill)) return;
+    if (t->prob < 100 && e1_chance(e->seed, ti, se) >= t->prob) return;
+    if (t->p_thin && e1_chance(e->seed ^ 0xA5A5A5A5u, ti, se) < 50) return;
+    if (t->muted || t->p_solo_mute) return;
 
     if (t->type == E1_TYPE_CC) {
+        int ports = e1_ports(e, t);
+        t->flash = 1;
         for (int l = 0; l < E1_CC_LANES; l++) {
             if (t->cc_val[l] < 0) continue;
             if (t->cc_mode == E1_CC_ON_PULSE) cc_send(t, l, t->cc_val[l], ports, emit, user);
@@ -277,17 +387,19 @@ static void fire_slot(e1_engine_t *e, int ti, e1_track_t *t, int64_t k, double w
         return;
     }
 
-    note_off(t, emit, user);
-    uint8_t ch = (uint8_t)(t->channel & 0x0F);
-    uint8_t note = t->note & 0x7F;
-    emit(user, ports, (uint8_t)(0x90 | ch), note, (uint8_t)clampi(t->velocity, 1, 127));
-    t->gate_open = 1;
-    t->gate_note = note;
-    t->gate_ch = ch;
-    t->gate_ports = (uint8_t)ports;
-    double len = slot_ticks(t) * (double)t->sustain / 50.0;
-    if (len < 1.0) len = 1.0;
-    t->gate_off = when + len;
+    double st = slot_ticks(t);
+    double len = st * (double)t->sustain / 50.0;
+    int vel = t->p_accent ? 127 : t->velocity;
+    if (t->p_ratchet >= 2) {
+        double dt = st / (double)t->p_ratchet;
+        if (len > dt * 0.8) len = dt * 0.8;
+        t->rat_left = (uint8_t)(t->p_ratchet - 1);
+        t->rat_dt = dt;
+        t->rat_next = when + dt;
+        t->rat_len = len;
+        t->rat_vel = (uint8_t)clampi(vel, 1, 127);
+    }
+    note_on(e, t, when, len, vel, emit, user);
 }
 
 /* Live CC edits and glides. Bounded per call so a burst of edits cannot
@@ -300,6 +412,7 @@ static void cc_service(e1_engine_t *e, e1_emit_fn emit, void *user)
         e1_track_t *t = &e->t[ti];
         if (t->type != E1_TYPE_CC) continue;
         int ports = e1_ports(e, t);
+        int silent = t->muted || t->p_solo_mute;
         for (int l = 0; l < E1_CC_LANES && budget > 0; l++) {
             if (t->cc_val[l] < 0) { t->cc_dirty &= ~(1u << l); continue; }
             if (t->cc_dirty & (1u << l)) {
@@ -307,7 +420,7 @@ static void cc_service(e1_engine_t *e, e1_emit_fn emit, void *user)
                 if (t->cc_mode == E1_CC_GLIDE && t->slew > 0) {
                     t->cc_target[l] = t->cc_val[l];
                 } else {
-                    if (!t->muted) { cc_send(t, l, t->cc_val[l], ports, emit, user); budget--; }
+                    if (!silent) { cc_send(t, l, t->cc_val[l], ports, emit, user); budget--; }
                     t->cc_cur[l] = (float)t->cc_val[l];
                 }
             }
@@ -319,7 +432,7 @@ static void cc_service(e1_engine_t *e, e1_emit_fn emit, void *user)
                 else if (cur > tgt) { cur -= rate; if (cur < tgt) cur = tgt; }
                 t->cc_cur[l] = cur;
                 int iv = (int)lrintf(cur);
-                if (iv != t->cc_sent[l] && !t->muted) { cc_send(t, l, iv, ports, emit, user); budget--; }
+                if (iv != t->cc_sent[l] && !silent) { cc_send(t, l, iv, ports, emit, user); budget--; }
                 if (cur == tgt) t->cc_target[l] = -1;
             }
         }
@@ -343,37 +456,33 @@ void e1_advance(e1_engine_t *e, double tick_now, e1_emit_fn emit, void *user)
             double st = slot_ticks(t);
             if (tick_now - slot_time(e, t, t->next_k, e->origin) > 2.0 * E1_TICKS_PER_BAR) {
                 int64_t k = (int64_t)floor((tick_now - e->origin) / st);
-                if (k > t->next_k) t->next_k = k;
+                if (k > t->next_k) { t->step_off += k - t->next_k; t->next_k = k; }
+                t->rat_left = 0;
             }
         }
         for (;;) {
             double when = slot_time(e, t, t->next_k, e->origin);
+            if (t->rat_left && t->rat_next < when && t->rat_next <= tick_now) {
+                if (t->gate_open && t->gate_off <= t->rat_next) note_off(t, emit, user);
+                if (!t->muted && !t->p_solo_mute)
+                    note_on(e, t, t->rat_next, t->rat_len, t->rat_vel, emit, user);
+                t->rat_next += t->rat_dt;
+                t->rat_left--;
+                continue;
+            }
             if (when > tick_now) break;
             if (t->gate_open && t->gate_off <= when) note_off(t, emit, user);
             fire_slot(e, ti, t, t->next_k, when, emit, user);
             t->next_k++;
             if (++guard > 256) {
-                /* A huge jump (clock glitch): skip ahead instead of
-                 * replaying hundreds of steps at once. */
                 double st = slot_ticks(t);
                 int64_t k = (int64_t)floor((tick_now - e->origin) / st) + 1;
-                if (k > t->next_k) t->next_k = k;
+                if (k > t->next_k) { t->step_off += k - t->next_k; t->next_k = k; }
                 break;
             }
         }
         if (t->gate_open && t->gate_off <= tick_now) note_off(t, emit, user);
     }
-}
-
-/* Re-anchor a track after its division changed while playing, so it
- * continues from "now" instead of replaying or skipping a run of steps. */
-static void resync_track(e1_engine_t *e, e1_track_t *t)
-{
-    if (!e->running) return;
-    double st = slot_ticks(t);
-    int64_t k = (int64_t)ceil((e->tick - e->origin) / st);
-    if (k < 0) k = 0;
-    t->next_k = k;
 }
 
 /* ----------------------------------------------------------- parameters */
@@ -510,7 +619,7 @@ static int set_track(e1_engine_t *e, e1_track_t *t, const char *key, const char 
     } else if (strcmp(key, "pulses") == 0) {
         t->del_mask = 0;   /* removed generated hits come back, as on the T-1 */
     } else if (strcmp(key, "division") == 0 && old_div != t->division) {
-        resync_track(e, t);
+        reanchor(e, t);
     } else if (strcmp(key, "type") == 0) {
         t->gate_open = 0;
     }
@@ -526,7 +635,7 @@ static int set_global(e1_engine_t *e, const char *key, const char *val)
         e->dest = (uint8_t)v; return 1;
     }
     if (strcmp(key, "seed") == 0) { e->seed = (uint32_t)strtoul(val, NULL, 10); return 1; }
-    if (strcmp(key, "fillheld") == 0) { e->fill_held = (uint8_t)(atoi(val) != 0); return 1; }
+    if (strcmp(key, "fillheld") == 0) { e1_perf(e, 0xFFFF, "fill", atoi(val)); return 1; }
     return 0;
 }
 

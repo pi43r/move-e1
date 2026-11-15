@@ -175,7 +175,81 @@ static void test_join(void) {
     CHECK(e1_get_num(&e, 0, ci) == 5);
 }
 
+static int ons_between(e1_engine_t *e, double from, double to) {
+    cap_t c = {0}; run(e, &c, from, to, 1); return count_on(&c, 0);
+}
+
+static void test_perform(void) {
+    e1_engine_t e; e1_init(&e); solo(&e, 0);
+    e.t[0].steps = 16; e.t[0].pulses = 4;
+    e1_start(&e, 0);
+    CHECK(ons_between(&e, 0, 383) == 4);                 /* one bar, four hits */
+    e1_perf(&e, 1, "ratchet", 3);
+    CHECK(ons_between(&e, 384, 767) == 12);              /* three per hit */
+    e1_perf(&e, 1, "ratchet", 0);
+    e1_perf(&e, 1, "speed", 1);
+    CHECK(ons_between(&e, 768, 1151) == 8);              /* double time */
+    e1_perf(&e, 1, "speed", -1);
+    int half = ons_between(&e, 1152, 1152 + 767);        /* two bars at half time */
+    CHECK(half == 4);
+    e1_perf(&e, 1, "speed", 0);
+    /* continuity: after speed changes the next step follows the last one */
+    int64_t before = e.t[0].last_s;
+    ons_between(&e, 1920, 1920 + 24);
+    CHECK(e.t[0].last_s == before + 1 || e.t[0].last_s == before + 2);
+    /* solo: other tracks fall silent */
+    e.t[1].muted = 0; e.t[1].pulses = 16; e.t[1].channel = 9;
+    e1_perf(&e, 1, "solo", 1);
+    cap_t c = {0}; run(&e, &c, 2000, 2383, 1);
+    CHECK(count_on(&c, 9) == 0 && count_on(&c, 0) > 0);
+    e1_perf(&e, 1, "solo", 0);
+    c.n = 0; run(&e, &c, 2384, 2767, 1);
+    CHECK(count_on(&c, 9) == 16);
+    /* accent */
+    e1_perf(&e, 1, "accent", 1);
+    c.n = 0; run(&e, &c, 2768, 2768 + 383, 1);
+    int ok = 1; for (int i = 0; i < c.n; i++) if (c.st[i] == 0x90 && c.d2[i] && c.d2[i] != 127) ok = 0;
+    CHECK(ok);
+    e1_perf(&e, 0xFFFF, "clear", 0);
+    CHECK(e.t[0].p_accent == 0);
+}
+
+static void test_freeze_reverse_restart(void) {
+    e1_engine_t e; e1_init(&e); solo(&e, 0);
+    e1_track_t *t = &e.t[0];
+    t->steps = 8; t->pulses = 8;
+    e1_start(&e, 0);
+    ons_between(&e, 0, 24 * 5 - 1);                      /* steps 0..4 played */
+    CHECK(t->cur_step == 4);
+    e1_perf(&e, 1, "freeze", 2);                         /* loop steps 3,4 */
+    int seen[8] = {0};
+    for (int i = 0; i < 6; i++) { ons_between(&e, 24 * (5 + i), 24 * (6 + i) - 1); seen[t->cur_step]++; }
+    CHECK(seen[3] == 3 && seen[4] == 3);
+    e1_perf(&e, 1, "freeze", 0);
+    ons_between(&e, 24 * 11, 24 * 12 - 1);
+    CHECK(t->cur_step == 11 % 8);                        /* the track kept going underneath */
+    e1_perf(&e, 1, "reverse", 1);
+    ons_between(&e, 24 * 12, 24 * 13 - 1);
+    CHECK(t->cur_step == 7 - (12 % 8));
+    e1_perf(&e, 1, "reverse", 0);
+    e1_perf(&e, 1, "restart", 0);
+    ons_between(&e, 24 * 13, 24 * 14 - 1);
+    CHECK(t->cur_step == 0);
+    /* division change keeps going from the next step */
+    ons_between(&e, 24 * 14, 24 * 16 - 1);
+    int last = t->cur_step;
+    e1_set(&e, 0, "division", "1/8");
+    ons_between(&e, 24 * 16, 24 * 16 + 47);
+    CHECK(t->cur_step == (last + 1) % 8);
+    /* copy_stored keeps position */
+    e1_track_t other; e1_track_defaults(&other, 3); other.pulses = 1;
+    int64_t pos = t->next_k;
+    e1_copy_stored(t, &other);
+    CHECK(t->pulses == 1 && t->next_k == pos);
+}
+
 int main(void) {
+    test_perform(); test_freeze_reverse_restart();
     test_join();
     test_euclid(); test_toggle(); test_playback(); test_polymeter_and_length();
     test_prob_deterministic(); test_dest_ports(); test_params(); test_dump_load();

@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1460" height="640" viewBox="0 0 1460 640" role="img" aria-labelledby="e1map-title e1map-desc" class="map">
 <title id="e1map-title">Move E-1 control map</title>
-<desc id="e1map-desc">Move top panel with what each control does in E-1 build 0.1. Adapted from the Move Bitwig control reference.</desc>
+<desc id="e1map-desc">Move top panel with what each control does in E-1 build 0.2. Adapted from the Move Bitwig control reference.</desc>
 <rect class="bg" width="1460" height="640" fill="#fafafa"/>
 <g font-family="Archivo, Helvetica Neue, Arial, sans-serif" fill="#262626">
 <text x="34" y="43" font-size="22" fill="#262626" font-weight="600">Move E-1</text>
-<text x="1426" y="43" font-size="20" fill="#666666" text-anchor="end">Control map · build 0.1</text>
+<text x="1426" y="43" font-size="20" fill="#666666" text-anchor="end">Control map · build 0.2</text>
 <g transform="translate(-270 -80) scale(2)">
 <rect x="256" y="96" width="487.8" height="227.7" rx="6" fill="#f6f6f6" stroke="#999999"/>
 <rect x="267.25" y="110.4" width="52.65" height="27" rx="1.5" fill="#e3e3e3" stroke="#999999"/>
@@ -154,16 +154,16 @@
 <text x="1240" y="156" font-size="15" fill="#666666" text-anchor="start">Move's master volume</text>
 <polyline points="1195,163 1227,140" fill="none" stroke="#aaaaaa" stroke-width="1.4"/>
 <text x="1240" y="252" font-size="19" fill="#262626" text-anchor="start" font-weight="600">Capture · Sample</text>
-<text x="1240" y="275" font-size="15" fill="#666666" text-anchor="start">Planned</text>
+<text x="1240" y="275" font-size="15" fill="#666666" text-anchor="start">Save pattern · hold for Temp</text>
 <polyline points="1195,248 1227,248" fill="none" stroke="#aaaaaa" stroke-width="1.4"/>
 <text x="1240" y="315" font-size="19" fill="#262626" text-anchor="start" font-weight="600">Loop · Mute</text>
-<text x="1240" y="338" font-size="15" fill="#666666" text-anchor="start">Hold Mute + track: mute</text>
+<text x="1240" y="338" font-size="15" fill="#666666" text-anchor="start">Hold: freeze · Mute + track</text>
 <polyline points="1195,311 1227,311" fill="none" stroke="#aaaaaa" stroke-width="1.4"/>
 <text x="1240" y="378" font-size="19" fill="#262626" text-anchor="start" font-weight="600">Delete · Copy</text>
-<text x="1240" y="401" font-size="15" fill="#666666" text-anchor="start">Planned</text>
+<text x="1240" y="401" font-size="15" fill="#666666" text-anchor="start">Clear · copy (hold + pads)</text>
 <polyline points="1195,374 1227,374" fill="none" stroke="#aaaaaa" stroke-width="1.4"/>
 <text x="1240" y="441" font-size="19" fill="#262626" text-anchor="start" font-weight="600">Undo · Shift</text>
-<text x="1240" y="464" font-size="15" fill="#666666" text-anchor="start">Shift: second functions</text>
+<text x="1240" y="464" font-size="15" fill="#666666" text-anchor="start">Step back · second functions</text>
 <polyline points="1195,437 1227,437" fill="none" stroke="#aaaaaa" stroke-width="1.4"/>
 <text x="1240" y="516" font-size="19" fill="#262626" text-anchor="start" font-weight="600">Left / Right</text>
 <text x="1240" y="539" font-size="15" fill="#666666" text-anchor="start">Step pages · Shift: rotate</text>
@@ -172,15 +172,15 @@
 <text x="220" y="180" font-size="15" fill="#666666" text-anchor="end">Track, page, knob values</text>
 <polyline points="232,152 264,168" fill="none" stroke="#aaaaaa" stroke-width="1.4"/>
 <text x="220" y="266" font-size="19" fill="#262626" text-anchor="end" font-weight="600">Wheel</text>
-<text x="220" y="289" font-size="15" fill="#666666" text-anchor="end">Knob pages · Shift: tempo</text>
+<text x="220" y="289" font-size="15" fill="#666666" text-anchor="end">Pages · click: Rhythm</text>
 <polyline points="232,261 274,279" fill="none" stroke="#aaaaaa" stroke-width="1.4"/>
 <text x="220" y="365" font-size="19" fill="#262626" text-anchor="end" font-weight="600">Back · Menu</text>
 <text x="220" y="388" font-size="15" fill="#666666" text-anchor="end">Hide E-1 · settings</text>
 <polyline points="232,360 266,374" fill="none" stroke="#aaaaaa" stroke-width="1.4"/>
 <text x="220" y="440" font-size="19" fill="#262626" text-anchor="end" font-weight="600">Track keys 1–4</text>
-<text x="220" y="463" font-size="15" fill="#666666" text-anchor="end">Bottom pads: Values, Keys,</text>
+<text x="220" y="463" font-size="15" fill="#666666" text-anchor="end">Bottom pads: Values, Perform,</text>
 <polyline points="232,435 381,437" fill="none" stroke="#aaaaaa" stroke-width="1.4"/>
-<text x="220" y="486" font-size="15" fill="#666666" text-anchor="end">Perform, Patterns</text>
+<text x="220" y="486" font-size="15" fill="#666666" text-anchor="end">Mutes, Patterns</text>
 <text x="220" y="530" font-size="19" fill="#262626" text-anchor="end" font-weight="600">Play · Record</text>
 <text x="220" y="553" font-size="15" fill="#666666" text-anchor="end">Start / stop · Rec is Move's</text>
 <polyline points="232,525 266,520" fill="none" stroke="#aaaaaa" stroke-width="1.4"/>
