@@ -1,0 +1,25 @@
+{
+  "_comment": "For Schwung's module-catalog.json. Not submitted yet: wait until E-1 has been tested on hardware.",
+  "entries": [
+    {
+      "id": "e1",
+      "name": "Move E-1",
+      "description": "16-track Euclidean performance sequencer for Move and for a computer over USB-C. Inspired by the Torso T-1; not affiliated with Torso Electronics. Overtake tool.",
+      "author": "pi43r",
+      "component_type": "tool",
+      "github_repo": "pi43r/move-e1",
+      "default_branch": "main",
+      "asset_name": "e1-module.tar.gz"
+    },
+    {
+      "id": "e1_lite",
+      "name": "E-1 Lite",
+      "description": "One E-1 Euclidean track as a slot MIDI FX.",
+      "author": "pi43r",
+      "component_type": "midi_fx",
+      "github_repo": "pi43r/move-e1",
+      "default_branch": "main",
+      "asset_name": "e1_lite-module.tar.gz"
+    }
+  ]
+}

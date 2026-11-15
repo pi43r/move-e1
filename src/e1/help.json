@@ -1,0 +1,48 @@
+{
+  "title": "E-1",
+  "children": [
+    { "title": "Overview", "lines": [
+      "16 Euclidean tracks.",
+      "Top 16 pads: tracks.",
+      "Bottom 16: a view,",
+      "picked with the 4",
+      "left-edge buttons.",
+      "Knobs: current page.",
+      "Jog: next page." ] },
+    { "title": "Tracks", "lines": [
+      "Tap: select.",
+      "Hold + tap more:",
+      " edit together.",
+      "Shift+tap: Note/CC.",
+      "Mute+tap: mute." ] },
+    { "title": "Steps", "lines": [
+      "Step row = selected",
+      "track. Tap a step",
+      "to add/remove a hit.",
+      "Left/Right: steps",
+      "17-64. Shift: rotate." ] },
+    { "title": "Views", "lines": [
+      "1 Values: choices",
+      " for the last knob",
+      " you touched.",
+      "3 Perform: pad 1 is",
+      " Fill (hold).",
+      "2 Keys, 4 Patterns:",
+      " not in 0.1." ] },
+    { "title": "Play and clock", "lines": [
+      "Play: start/stop.",
+      "Shift+Play: clock",
+      " Move/Internal/PC.",
+      "Shift+jog: tempo",
+      " (Internal only).",
+      "Menu: settings.",
+      "Shift+Menu: output",
+      " Move/PC/Both." ] },
+    { "title": "Exit", "lines": [
+      "Back: hide, keeps",
+      " playing.",
+      "Shift+Back: quit.",
+      "Saved to",
+      "UserData/schwung/e1" ] }
+  ]
+}
