@@ -4,7 +4,7 @@ E-1 is a 16-track Euclidean performance sequencer for [Ableton Move](https://www
 
 The idea and most of the vocabulary come from the [Torso T-1](https://torsoelectronics.com/pages/t-1). E-1 is an independent project and is not affiliated with or endorsed by Torso Electronics.
 
-**Status: build 0.3.0.** Build 0.3 replaces the 0.2 control surface. E-1 has not yet been submitted to the Schwung catalog. Install it by hand as described below.
+**Status: build 0.3.1.** Build 0.3 replaces the 0.2 control surface. E-1 has not yet been submitted to the Schwung catalog. Install it by hand as described below.
 
 ![Move E-1 control map](docs/control-map.svg)
 
@@ -39,9 +39,9 @@ The starter set has tracks 1 to 4 (kick, snare, hat, clap, notes 36 to 39) on MI
 | Left / Right | Page through steps 17 to 64. Shift + Left / Right rotates the pattern. |
 | Bottom 16 pads | Follow the last knob you touched: divisions, a keyboard for Pitch, scales, styles, values. |
 | Plus / Minus | Page the bottom pads, or move the Pitch keyboard an octave. |
-| Knobs 1 to 8 | Edit the current page. Hold Shift for each knob's second function. |
+| Knobs 1 to 8 | Edit the current page. Hold Shift for each knob's second function. The LEDs under knobs 1 to 4 and 5 to 8 have two colours, matching the two rows on screen. The knob you last touched is white and has corner marks on screen. Turning a knob with named values (Div, Scale, Style and so on) shows the whole list. |
 | Jog wheel | Turn to change page. Click to go home. Shift + turn sets the tempo. |
-| Left buttons | Pattern, Cycles, Temp, Perform, top to bottom. Hold for momentary, tap to latch. Temp works only while held. |
+| Left buttons | Pattern (green), Cycles (blue), Temp (yellow), Perform (pink), top to bottom. Hold for momentary, tap to latch. Temp works only while held. A button turns white while its layer is up, and the screen shows a 4 by 4 grid that mirrors the bottom pads. |
 | Mute | Hold and tap track pads. The mutes apply together when you let go. Shift + track pad mutes at once. |
 | Sample | Hold and turn a knob to set how far that knob's value wanders at random. Delete + Sample clears random amounts. |
 | Loop | Hold to freeze the last 4 steps. Tap a step while holding to set the freeze length. |
@@ -51,7 +51,7 @@ The starter set has tracks 1 to 4 (kick, snare, hat, clap, notes 36 to 39) on MI
 | Undo | Step back, up to 24 steps. |
 | Play | Start and stop. When Move owns the clock, it presses Move's own Play. Shift + Play changes the clock source. |
 | Menu | Open the menu. Shift + Menu changes the output: Move, Computer, Both. |
-| Back | Hide E-1. It keeps playing. |
+| Back | Step out: closes a menu level, Settings, cycle edit or a latched layer. Hold Back for half a second to switch to Move while E-1 keeps playing. To come back, use Schwung's Tools shortcut or open E-1 from the Tools menu. Shift + Back quits E-1 and stops it. |
 | Record | Stays Move's. |
 
 ## Knob pages
@@ -113,7 +113,7 @@ Poly styles play the whole pool as a chord. Mono styles play one pool note per p
 | 7 | Repeat | Choke: a new pulse cuts the last one. Tail: they overlap. | Dir: Mono styles play up or down |
 | 8 | PhrRate | Phrase length: x1 is 4 bars, x2 is 2 bars, /2 is 8 bars | |
 
-Knobs 6 to 8 on Settings act on the selected or held tracks. Press Menu again, or click the jog wheel, to leave Settings.
+Knobs 6 to 8 on Settings act on the selected or held tracks. Press Back, or click the jog wheel, to leave Settings.
 
 ## Cycles
 
@@ -138,7 +138,7 @@ Restart, Rotate +1 and New dice act once per tap. Rotate +1 changes the saved tr
 
 A pattern is a copy of all 16 tracks. A set holds 16 patterns. Hold or latch Pattern: tap a pad to play that pattern on the next quantize line, tap it again to switch at once, Shift + pad to save into it. Copy and Delete work on pattern pads. Capture saves to the next empty slot.
 
-Menu holds Settings, Sets (save, save as, new, load, rename, duplicate, delete), Patterns (play, save, rename, copy, clear), Track presets (save the selected track, load, rename, delete) and Tracks (rename). Names are typed with Schwung's on-screen keyboard.
+Menu is one short list that acts on what is in front of you: Save set, Save set as, Load set, Name pattern (the one playing), Name track (the one selected), Save track as preset, Load preset, Settings and More. More holds New empty set, Rename, Duplicate and the two Delete lists. Turn the jog wheel, click to choose, Back to step up, Menu to close. A finished action closes the menu. Names are typed with Schwung's on-screen keyboard. Copying and clearing patterns is done on the pads with Copy and Delete.
 
 A set changes on disk only when you save it. The live state is saved separately and comes back the next time E-1 starts. Everything is stored in `/data/UserData/schwung/e1/`.
 

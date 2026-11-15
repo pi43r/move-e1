@@ -180,8 +180,8 @@
 <text x="220" y="285" font-size="14" fill="#666666" text-anchor="end">Shift + turn: tempo</text>
 <polyline points="232,243 274,265" fill="none" stroke="#aaaaaa" stroke-width="1.4"/>
 <text x="220" y="345" font-size="19" fill="#262626" text-anchor="end" font-weight="600">Back · Menu</text>
-<text x="220" y="365" font-size="14" fill="#666666" text-anchor="end">Hide E-1 · open the menu</text>
-<text x="220" y="382" font-size="14" fill="#666666" text-anchor="end">Shift + Menu: output</text>
+<text x="220" y="365" font-size="14" fill="#666666" text-anchor="end">Back: step out. Hold: to Move</text>
+<text x="220" y="382" font-size="14" fill="#666666" text-anchor="end">Menu: save, load, name</text>
 <polyline points="232,340 266,366" fill="none" stroke="#aaaaaa" stroke-width="1.4"/>
 <text x="220" y="436" font-size="19" fill="#262626" text-anchor="end" font-weight="600">Left buttons</text>
 <text x="220" y="456" font-size="14" fill="#666666" text-anchor="end">Hold, or tap to latch</text>

@@ -208,235 +208,89 @@ function setup(over) {
 const go = (m, n) => { m.jog(-99); m.jog(n); };
 const last = (h) => h.acts[h.acts.length - 1];
 
-/* Root and settings */
+/* The menu is one flat list acting on the loaded set, the playing pattern
+ * and the selected track. Rows: 0 Save set, 1 Save set as, 2 Load set,
+ * 3 Name pattern, 4 Name track, 5 Save preset, 6 Load preset, 7 Settings, 8 More. */
 {
     const { m, host } = setup();
+    host.notes = []; host.notify = (t) => host.notes.push(t);
     check("open", m.isOpen());
     checkEq("root path", m.path(), ["E-1"]);
-    m.click();
-    checkEq("settings act", host.acts, [["settings.open"]]);
-    check("settings closes", !m.isOpen());
-    m.open();
-    check("back at root closes", m.back() === false && !m.isOpen());
-    m.open(); go(m, 1); m.click();
-    checkEq("sets path", m.path(), ["E-1", "Sets"]);
-    check("back returns true when open", m.back() === true && m.isOpen());
+    go(m, 0); m.click();
+    checkEq("save set", last(host), ["set.save"]);
+    check("a finished action closes the menu", !m.isOpen());
+    checkEq("and reports on the main screen", host.notes, ["SAVED Beta"]);
 }
-
-/* Sets: save, save as, new */
 {
-    const { m, host } = setup();
-    go(m, 1); m.click();
-    m.click();
-    checkEq("set.save", last(host), ["set.save"]);
-    checkEq("toast saved", m.toast(), "SAVED");
-    clockNow += TOAST_MS + 1;
-    checkEq("toast expires", m.toast(), null);
-    checkEq("stays at sets", m.path(), ["E-1", "Sets"]);
-
-    go(m, 1); m.click();
-    checkEq("save as ask", [host.asks[0].title, host.asks[0].initial], ["Save set as", "Beta"]);
-    host.asks[0].cb("  New   Name ");
-    checkEq("set.saveAs", last(host), ["set.saveAs", { name: "New Name" }]);
-    const n = host.acts.length;
-    host.asks[0].cb(""); host.asks[0].cb(null);
-    checkEq("empty name ignored", host.acts.length, n);
-
-    go(m, 2); m.click();
-    checkEq("new set default", host.asks[1].initial, "Set 1");
-    host.asks[1].cb("Fresh");
-    checkEq("set.new", last(host), ["set.new", { name: "Fresh" }]);
-    checkEq("created toast", m.toast(), "CREATED");
+    const { m, host } = setup({ setId: null, setName: "Set 1" });
+    go(m, 0); m.click();
+    check("save without a file asks for a name", host.asks.length === 1 && host.acts.length === 0);
+    host.asks[0].cb("Night");
+    checkEq("then saves as", last(host), ["set.saveAs", { name: "Night" }]);
 }
-
-/* Set submenu: load clean, rename, duplicate, delete */
-{
-    const { m, host } = setup();
-    go(m, 1); m.click();
-    go(m, 5); m.click();   /* Gamma */
-    checkEq("set submenu path", m.path(), ["E-1", "Sets", "Gamma"]);
-    m.click();
-    checkEq("clean load acts at once", host.acts, [["set.load", { id: "c" }]]);
-    checkEq("load returns to list", m.path(), ["E-1", "Sets"]);
-    checkEq("loaded toast", m.toast(), "LOADED");
-
-    m.click(); go(m, 1); m.click();
-    checkEq("rename ask", [host.asks[0].title, host.asks[0].initial], ["Rename set", "Gamma"]);
-    host.asks[0].cb("Delta");
-    checkEq("set.rename", last(host), ["set.rename", { id: "c", name: "Delta" }]);
-    checkEq("rename back to list", m.path(), ["E-1", "Sets"]);
-
-    m.click(); go(m, 2); m.click();
-    checkEq("set.duplicate", last(host), ["set.duplicate", { id: "c" }]);
-    checkEq("duplicate back to list", m.path(), ["E-1", "Sets"]);
-
-    m.click(); go(m, 3); m.click();
-    checkEq("delete confirm", m.path(), ["E-1", "Sets", "Gamma", "Delete set?"]);
-    const n = host.acts.length;
-    m.click();   /* defaults to Cancel */
-    checkEq("cancel does nothing", host.acts.length, n);
-    checkEq("cancel back to submenu", m.path(), ["E-1", "Sets", "Gamma"]);
-    m.click(); m.jog(-1); m.click();
-    checkEq("set.delete", last(host), ["set.delete", { id: "c" }]);
-    checkEq("delete back to list", m.path(), ["E-1", "Sets"]);
-    checkEq("deleted toast", m.toast(), "DELETED");
-}
-
-/* Dirty load confirm */
-{
-    const { m, host, state } = setup({ dirty: true });
-    go(m, 1); m.click(); go(m, 3); m.click();   /* Alpha */
-    m.click();
-    checkEq("dirty confirm path", m.path(), ["E-1", "Sets", "Alpha", "Unsaved changes"]);
-    checkEq("no act before choice", host.acts, []);
-    m.click();   /* Save then load */
-    checkEq("save then load", host.acts, [["set.save"], ["set.load", { id: "a" }]]);
-    checkEq("after save-load list", m.path(), ["E-1", "Sets"]);
-
-    host.acts.length = 0;
-    m.click(); m.click(); m.jog(1); m.click();
-    checkEq("load anyway", host.acts, [["set.load", { id: "a" }]]);
-
-    host.acts.length = 0;
-    m.click(); m.click(); m.jog(2); m.click();
-    checkEq("cancel dirty", host.acts, []);
-    checkEq("cancel dirty path", m.path(), ["E-1", "Sets", "Alpha"]);
-    m.back();
-    state.dirty = false;
-}
-
-/* Patterns */
 {
     const { m, host } = setup();
     go(m, 2); m.click();
-    checkEq("patterns path", m.path(), ["E-1", "Patterns"]);
-    m.click();   /* 01 Intro, filled */
-    checkEq("pattern path", m.path(), ["E-1", "Patterns", "P01 Intro"]);
-    m.click();
-    checkEq("pattern.goto", last(host), ["pattern.goto", { i: 0 }]);
-    checkEq("goto back to list", m.path(), ["E-1", "Patterns"]);
-
-    m.click(); go(m, 1); m.click();
-    checkEq("pattern.save", last(host), ["pattern.save", { i: 0 }]);
-
-    m.click(); go(m, 2); m.click();
-    checkEq("pattern rename ask", host.asks[0].initial, "Intro");
-    host.asks[0].cb("Outro");
-    checkEq("pattern.rename", last(host), ["pattern.rename", { i: 0, name: "Outro" }]);
-    checkEq("rename back to list", m.path(), ["E-1", "Patterns"]);
-
-    m.click(); go(m, 3); m.click();
-    checkEq("copy picker path", m.path(), ["E-1", "Patterns", "P01 Intro", "Copy P01 to"]);
-    const n = host.acts.length;
-    m.click();   /* same slot */
-    checkEq("same slot no act", host.acts.length, n);
-    checkEq("same slot toast", m.toast(), "SAME SLOT");
-    go(m, 7); m.click();
-    checkEq("pattern.copy", last(host), ["pattern.copy", { from: 0, to: 7 }]);
-    checkEq("copy back to list", m.path(), ["E-1", "Patterns"]);
-
-    m.click(); go(m, 4); m.click();
-    checkEq("clear confirm", m.path(), ["E-1", "Patterns", "P01 Intro", "Clear P01?"]);
-    m.jog(-1); m.click();
-    checkEq("pattern.clear", last(host), ["pattern.clear", { i: 0 }]);
-    checkEq("clear back to list", m.path(), ["E-1", "Patterns"]);
-
-    /* Empty slot offers only Save here. */
-    go(m, 1); m.click();
-    m.jog(5); m.click();
-    checkEq("empty slot save", last(host), ["pattern.save", { i: 1 }]);
+    checkEq("load list", m.path(), ["E-1", "Load set"]);
+    go(m, 2); m.click();
+    checkEq("clean: loads at once", last(host), ["set.load", { id: "c" }]);
+    check("closed after load", !m.isOpen());
 }
-
-/* Track presets */
+{
+    const { m, host } = setup({ dirty: true });
+    go(m, 2); m.click(); go(m, 0); m.click();
+    check("dirty: asks first", host.acts.length === 0 && m.path().length === 3);
+    m.click();
+    checkEq("save, then load", host.acts, [["set.save"], ["set.load", { id: "a" }]]);
+}
 {
     const { m, host } = setup();
-    go(m, 3); m.click();
-    m.click();
-    checkEq("preset save ask", [host.asks[0].title, host.asks[0].initial], ["Preset name", "HAT"]);
-    host.asks[0].cb("Hat A");
-    checkEq("preset.save", last(host), ["preset.save", { name: "Hat A" }]);
-
-    go(m, 2); m.click();
-    checkEq("preset path", m.path(), ["E-1", "Track presets", "P two"]);
-    m.click();
-    checkEq("preset.load", last(host), ["preset.load", { i: 1 }]);
-    checkEq("load back to list", m.path(), ["E-1", "Track presets"]);
-
-    m.click(); go(m, 1); m.click();
-    host.asks[1].cb("P2");
-    checkEq("preset.rename", last(host), ["preset.rename", { i: 1, name: "P2" }]);
-
-    m.click(); go(m, 2); m.click(); m.jog(-1); m.click();
-    checkEq("preset.delete", last(host), ["preset.delete", { i: 1 }]);
-    checkEq("preset delete back to list", m.path(), ["E-1", "Track presets"]);
+    go(m, 3); m.click(); host.asks[0].cb("Verse");
+    checkEq("name the playing pattern", last(host), ["pattern.rename", { i: 0, name: "Verse" }]);
 }
-
-/* Tracks */
 {
     const { m, host } = setup();
     go(m, 4); m.click();
-    go(m, 2); m.click();
-    checkEq("track ask", [host.asks[0].title, host.asks[0].initial], ["Track 3 name", "HAT"]);
-    host.asks[0].cb("OPEN HAT");
-    checkEq("track.rename", last(host), ["track.rename", { t: 2, name: "OPEN HAT" }]);
-    checkEq("renamed toast", m.toast(), "RENAMED");
-    checkEq("tracks stays", m.path(), ["E-1", "Tracks"]);
-    m.jog(100); m.click();
-    checkEq("jog clamps to last track", host.asks[1].title, "Track 16 name");
+    checkEq("track name starts from the current one", host.asks[0].initial, "HAT");
+    host.asks[0].cb("Ride");
+    checkEq("name the selected track", last(host), ["track.rename", { t: 2, name: "Ride" }]);
 }
-
-/* Cursor memory and fresh state */
 {
-    const { m, host, state } = setup();
-    go(m, 2); m.click(); m.jog(6); m.back();
-    m.jog(-1); m.click();   /* Sets */
-    m.back(); m.jog(1); m.click();   /* Patterns again */
-    m.click();
-    checkEq("cursor remembered", m.path()[2], "P07 empty");
-    m.back(); m.back();
-    checkEq("two backs reach root", m.path(), ["E-1"]);
-    m.click();
-    checkEq("root cursor at Patterns", m.path(), ["E-1", "Patterns"]);
-    m.close(); m.open();
-    checkEq("reopen at root", m.path(), ["E-1"]);
-    m.click();
-    checkEq("reopen keeps root cursor", m.path(), ["E-1", "Patterns"]);
-    m.back();
-    go(m, 1); m.click(); go(m, 5); m.click();
-    state.sets[2].name = "Renamed Elsewhere";
-    checkEq("title re-reads state", m.path()[2], "Renamed Elsewhere");
-    m.back();
-    state.sets.length = 1;
-    m.jog(0);
-    m.click();
-    checkEq("cursor clamps when list shrinks", m.path()[2], "Alpha");
-    void host;
+    const { m, host } = setup({ currentPattern: -1 });
+    go(m, 3); m.click();
+    check("no pattern playing: the row is not there", host.asks[0].title.startsWith("Track"));
 }
-
-/* Drawing stays on screen, scrolls, and uppercases */
 {
-    const { m, state } = setup();
-    state.sets = Array.from({ length: 12 }, (_, i) => ({ id: "s" + i, name: "A very long set name " + i }));
-    let out = 0, prints = [];
-    const ctx = {
-        fillRect(x, y, w, h) { if (x < 0 || y < 0 || x + w > 128 || y + h > 64) out++; },
-        print(x, y, s) { prints.push(s); if (x < 0 || y < 0 || x + s.length * 6 > 129 || y + 7 > 64) out++; },
-        textWidth: (s) => s.length * 6,
-    };
-    m.draw(ctx);
-    checkEq("root draw in bounds", out, 0);
-    check("draw uppercases", prints.includes("E-1") && prints.includes("SETTINGS"));
-    m.jog(1); m.click(); m.jog(14);
-    prints = []; m.draw(ctx);
-    checkEq("scrolled draw in bounds", out, 0);
-    check("long names truncated with ..", prints.some((p) => p.endsWith("..")));
-    check("scrolled to cursor", prints.some((p) => p.startsWith("A VERY LONG SET NAME 11".slice(0, 10))));
-    m.click(); m.click();
-    prints = []; m.draw(ctx);
-    check("toast drawn on footer", prints.includes("LOADED"), prints);
-    clockNow += TOAST_MS;
-    prints = []; m.draw(ctx);
-    check("hint after toast", !prints.includes("LOADED") && prints.some((p) => p.startsWith("CLICK")), prints);
+    const { m, host } = setup();
+    go(m, 5); m.click(); host.asks[0].cb("Tight hat");
+    checkEq("save preset", last(host), ["preset.save", { name: "Tight hat" }]);
+    m.open(); go(m, 6); m.click(); go(m, 1); m.click();
+    checkEq("load preset", last(host), ["preset.load", { i: 1 }]);
+    m.open(); go(m, 7); m.click();
+    checkEq("settings", last(host), ["settings.open"]);
+    check("settings closes the menu", !m.isOpen());
+}
+{
+    const { m, host } = setup();
+    go(m, 8); m.click();
+    checkEq("more", m.path(), ["E-1", "More"]);
+    go(m, 3); m.click(); go(m, 0); m.click();
+    check("delete asks first", host.acts.length === 0);
+    m.jog(1); m.click();
+    check("cancel is the default and deletes nothing", host.acts.length === 0);
+    m.click(); m.jog(-1); m.click();
+    checkEq("delete set", last(host), ["set.delete", { id: "a" }]);
+    checkEq("after delete: back in More", m.path(), ["E-1", "More"]);
+    check("back steps up", m.back() === true && m.path().length === 1);
+    check("back at the top closes", m.back() === false && !m.isOpen());
+}
+{
+    const { m } = setup({ sets: [], presets: [] });
+    go(m, 2); m.click(); m.click();
+    checkEq("empty list: click goes back", m.path(), ["E-1"]);
+    const prints = [];
+    m.draw({ print: (x, y, t) => prints.push(t), fillRect() {}, textWidth: (t) => t.length * 6 });
+    check("draws title and hint", prints.includes("E-1") && prints.some((p) => p.startsWith("CLICK")), prints);
 }
 
 console.log(pass + "/" + (pass + fail) + " library checks passed");

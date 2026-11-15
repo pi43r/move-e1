@@ -53,6 +53,11 @@ const cases = [
     ["toast-next", (() => { const s = state("t1", "Shape", { toast: toast("NEXT", "P2 DROP"), queued: 1 }); s.snap.q = 1; return s; })()],
     ["warn-sync", (() => { const s = state("t1", "Shape"); s.snap.ck = 2; s.warn = "SET MOVE TO MIDI SYNC"; return s; })()],
     ["patterns", state("t1", "Shape", { layer: "pattern" })],
+    ["perform", state("t1", "Shape", { layer: "perform", perfHeld: Array.from({ length: 16 }, (_, i) => i === 2), latched: Array.from({ length: 16 }, (_, i) => i === 6) })],
+    ["cycles", state("t1edit", "Shape", { layer: "cycles" })],
+    ["list-scale", state("t10", "Tone", { listKey: "scale", padKey: "scale" })],
+    ["list-division", state("t1", "Shape", { listKey: "division", padKey: "division" })],
+    ["selected-knob", state("t1", "Shape", { padKey: "pulses" })],
 ];
 
 if (pngDir) fs.mkdirSync(pngDir, { recursive: true });
@@ -60,8 +65,8 @@ let bad = 0;
 for (const [name, st] of cases) {
     const fb = createFramebuffer();
     const ctx = drawContext(fb);
-    if (st.layer === "pattern") V.drawPatternGrid(ctx, st);
-    else renderPageMovy(ctx, V.pageOptions(st, LIB));
+    if (st.listKey && V.drawValueList(ctx, st)) { /* list of a named value */ }
+    else if (!V.drawLayer(ctx, st)) { renderPageMovy(ctx, V.pageOptions(st, LIB)); V.drawSelection(ctx, st); }
     if (fb.clipped()) bad++;
     if (pngDir) fs.writeFileSync(path.join(pngDir, name + ".png"), fb.toPng(4));
     else { console.log("== " + name); console.log(fb.toBlocks()); }

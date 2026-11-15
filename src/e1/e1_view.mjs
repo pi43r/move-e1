@@ -119,12 +119,12 @@ export const PERFORM = [
     { label: "RATCHET 4", move: "ratchet", value: 4, kind: "hold", color: "red" },
     { label: "HALF TIME", move: "speed", value: -1, kind: "hold", color: "green" },
     { label: "DOUBLE TIME", move: "speed", value: 1, kind: "hold", color: "green" },
-    { label: "REVERSE", move: "reverse", value: 1, kind: "hold", color: "purple" },
+    { label: "REVERSE", move: "reverse", value: 1, kind: "hold", color: "pink" },
     { label: "ACCENT", move: "accent", value: 1, kind: "hold", color: "orange" },
-    { label: "FREEZE 1", move: "freeze", value: 1, kind: "hold", color: "purple" },
-    { label: "FREEZE 2", move: "freeze", value: 2, kind: "hold", color: "purple" },
-    { label: "FREEZE 4", move: "freeze", value: 4, kind: "hold", color: "purple" },
-    { label: "FREEZE 8", move: "freeze", value: 8, kind: "hold", color: "purple" },
+    { label: "FREEZE 1", move: "freeze", value: 1, kind: "hold", color: "blue" },
+    { label: "FREEZE 2", move: "freeze", value: 2, kind: "hold", color: "blue" },
+    { label: "FREEZE 4", move: "freeze", value: 4, kind: "hold", color: "blue" },
+    { label: "FREEZE 8", move: "freeze", value: 8, kind: "hold", color: "blue" },
     { label: "SOLO", move: "solo", value: 1, kind: "hold", color: "yellow" },
     { label: "RESTART", move: "restart", value: 0, kind: "shot", color: "teal" },
     { label: "ROTATE +1", move: "rotate", value: 1, kind: "shot", color: "teal" },
@@ -212,6 +212,10 @@ export const COL = {
     teal: 87, blue: 95, purple: 104, yellow: 13, pink: 25, grey: 118,
 };
 
+/* One colour per layer, on its left button and on its pads. White always
+ * means "this one, now". Red always means "editing one cycle". */
+export const LAYER_COL = { pattern: COL.green, cycles: COL.blue, temp: COL.yellow, perform: COL.pink };
+
 export const STEP_BASE = 16;
 export function trackPadNote(t) { return t < 8 ? 92 + t : 84 + (t - 8); }
 export function padToTrack(note) {
@@ -269,9 +273,9 @@ export function padModel(st) {
     if (mode === "pattern") {
         for (let i = 0; i < 16; i++) {
             const filled = st.patterns && st.patterns[i];
-            let c = filled ? COL.blue : COL.dim;
+            let c = filled ? COL.green : COL.dim;
             if (st.current === i) c = COL.white;
-            if (st.queued === i) c = blink ? COL.green : COL.off;
+            if (st.queued === i) c = blink ? COL.white : COL.green;
             pads[i] = { c, act: { k: "pattern", i } };
         }
         return { title: "PATTERNS", pads };
@@ -288,8 +292,8 @@ export function padModel(st) {
         const n = parseInt(v.cycles, 10) || 1;
         const em = s.em | 0, ce = s.ce | 0;
         for (let i = 0; i < 16; i++) {
-            let c = i < n ? COL.grey : COL.off;
-            if ((ce >> i) & 1) c = i < n ? COL.red : COL.dim;
+            let c = i < n ? COL.blue : COL.off;
+            if ((ce >> i) & 1) c = i < n ? COL.purple : COL.dim;   /* differs from the base */
             if (s.r && !em && i === (s.pc | 0)) c = COL.white;
             if ((em >> i) & 1) c = blink ? COL.white : COL.red;
             pads[i] = { c, act: { k: "cycle", i } };
@@ -335,7 +339,7 @@ export function padModel(st) {
     if (key === "division" || key === "time" || key === "rate") {
         for (const slot in DIV_SLOTS) {
             const idx = DIV_SLOTS[slot];
-            const c = DIVISIONS[idx] === cur ? COL.white : (idx < 7 ? COL.grey : (idx < 12 ? COL.blue : COL.purple));
+            const c = DIVISIONS[idx] === cur ? COL.white : (idx < 7 ? COL.blue : (idx < 12 ? COL.purple : COL.teal));
             pads[slot] = { c, act: set(key, DIVISIONS[idx], m.name + " " + DIVISIONS[idx]) };
         }
         return { title, pads };
@@ -545,28 +549,129 @@ export function pageOptions(st, lib) {
     };
 }
 
-/* While Pattern is held: all 16 slots with their names. */
-export function drawPatternGrid(ctx, st) {
+/* A 4 x 4 grid of short labels that mirrors the bottom pads, shown while a
+ * left button is held or latched. cells: { txt, on (inverted), box (outlined) } */
+function drawGrid(ctx, st, head, right, cells, hint) {
     const now = st.now || 0;
-    const blink = Math.floor(now / 200) % 2 === 0;
     ctx.fillRect(0, 0, 128, 64, 0);
-    const head = "PATTERNS";
     ctx.print(1, 1, head, 1);
-    const sn = cut((st.setName || "").toUpperCase(), 11);
-    ctx.print(127 - ctx.textWidth(sn), 1, sn, 1);
+    ctx.print(127 - ctx.textWidth(right), 1, right, 1);
     ctx.fillRect(0, 9, 128, 1, 1);
     for (let i = 0; i < 16; i++) {
-        const col = i % 4;
-        const row = Math.floor(i / 4);
-        const x = col * 32, y = 11 + row * 11;
-        const p = st.patterns && st.patterns[i];
-        const cur = st.current === i, queued = st.queued === i;
-        const txt = p ? cut((p.name || "P" + (i + 1)).toUpperCase(), 5) : "-";
-        if (cur) ctx.fillRect(x, y, 31, 10, 1);
-        else if (queued && blink) { ctx.fillRect(x, y, 31, 1, 1); ctx.fillRect(x, y + 9, 31, 1, 1); ctx.fillRect(x, y, 1, 10, 1); ctx.fillRect(x + 30, y, 1, 10, 1); }
-        ctx.print(x + 2, y + 2, txt, cur ? 0 : 1);
+        const x = (i % 4) * 32, y = 11 + Math.floor(i / 4) * 11;
+        const c = cells[i] || { txt: "" };
+        if (c.on) ctx.fillRect(x, y, 31, 10, 1);
+        else if (c.box) { ctx.fillRect(x, y, 31, 1, 1); ctx.fillRect(x, y + 9, 31, 1, 1); ctx.fillRect(x, y, 1, 10, 1); ctx.fillRect(x + 30, y, 1, 10, 1); }
+        ctx.print(x + 2, y + 2, cut(c.txt, 5), c.on ? 0 : 1);
     }
-    const foot = st.toast && st.toast.until > now ? st.toast.tag + " " + st.toast.text
-        : (st.shift ? "TAP SAVES HERE" : "SHIFT+PAD SAVES");
+    const foot = st.toast && st.toast.until > now ? st.toast.tag + " " + st.toast.text : hint;
     ctx.print(1, 56, cut(foot, 21), 1);
+}
+
+const PERF_SHORT = ["FILL", "RAT2", "RAT3", "RAT4", "HALF", "DBL", "REV", "ACC", "FRZ1", "FRZ2", "FRZ4", "FRZ8", "SOLO", "RSTRT", "ROT+", "DICE"];
+
+/* The screen for a held or latched layer. Returns false when there is none. */
+export function drawLayer(ctx, st) {
+    const s = st.snap || {};
+    const blink = Math.floor((st.now || 0) / 200) % 2 === 0;
+    if (st.layer === "pattern") {
+        const cells = Array.from({ length: 16 }, (_, i) => {
+            const p = st.patterns && st.patterns[i];
+            return { txt: p ? (p.name || "P" + (i + 1)).toUpperCase() : "-", on: st.current === i, box: st.queued === i && blink };
+        });
+        drawGrid(ctx, st, "PATTERNS", cut((st.setName || "").toUpperCase(), 11), cells,
+            st.shift ? "TAP SAVES HERE" : "TAP PLAY  SHIFT SAVE");
+        return true;
+    }
+    if (st.layer === "perform") {
+        const cells = PERF_SHORT.map((txt, i) => ({ txt, on: st.perfHeld && st.perfHeld[i], box: st.latched && st.latched[i] }));
+        const n = st.held ? st.held.size : 0;
+        drawGrid(ctx, st, "PERFORM", n ? n + (n === 1 ? " TRACK" : " TRACKS") : "ALL TRACKS", cells,
+            st.shift ? "TAP LATCHES" : "HOLD  SHIFT LATCHES");
+        return true;
+    }
+    if (st.layer === "cycles") {
+        const n = parseInt((st.values || {}).cycles, 10) || 1;
+        const em = s.em | 0, ce = s.ce | 0;
+        const cells = Array.from({ length: 16 }, (_, i) => ({
+            txt: i < n ? (i + 1) + (((ce >> i) & 1) ? "*" : "") : "-",
+            on: (em >> i) & 1, box: !em && s.r && i === (s.pc | 0),
+        }));
+        drawGrid(ctx, st, "CYCLES", "T" + (st.focus + 1) + " " + cut(trackName(st, st.focus), 8), cells,
+            st.shift ? "TAP SETS HOW MANY" : (em ? "EDITING  TAP TO END" : "TAP EDITS  * CHANGED"));
+        return true;
+    }
+    return false;
+}
+
+/* ------------------------------------------------------------ knob marks */
+
+/* Which of the eight knobs owns the bottom pads right now, or -1. */
+export function selectedKnob(st) {
+    const keys = knobKeys(st);
+    const base = (k) => (k && k.slice(0, 2) === "r." ? k.slice(2) : k);
+    return keys.findIndex((k) => k && base(k) === st.padKey);
+}
+
+/* Corner marks around the selected knob's cell, drawn over the page. */
+export function drawSelection(ctx, st) {
+    const i = selectedKnob(st);
+    if (i < 0 || st.touched === i) return;        /* a touched knob is already inverted */
+    const x = (i % 4) * 32, y = i < 4 ? 11 : 34, w = 32, h = 21;
+    for (const [cx, cy, dx, dy] of [[x, y, 1, 1], [x + w - 1, y, -1, 1], [x, y + h - 1, 1, -1], [x + w - 1, y + h - 1, -1, -1]]) {
+        const arm = dy > 0 ? 4 : 2;               /* short at the bottom, clear of the label */
+        ctx.fillRect(Math.min(cx, cx + dx * 3), cy, 4, 1, 1);
+        ctx.fillRect(cx, Math.min(cy, cy + dy * (arm - 1)), 1, arm, 1);
+    }
+}
+
+/* Knob LEDs: upper row of four in one colour, lower row in another, the
+ * selected knob white, unused knobs off. */
+export function knobLeds(st) {
+    const keys = knobKeys(st);
+    const sel = selectedKnob(st);
+    return keys.map((k, i) => (!k ? COL.off : i === sel ? COL.white : i < 4 ? COL.teal : COL.orange));
+}
+
+/* ------------------------------------------------------------ value list */
+
+/* The options of a named value, shown while its knob turns. */
+export function listFor(st) {
+    const key = st.listKey;
+    const m = key ? metaFor(key) : null;
+    if (!m || !m.options) return null;
+    const cur = Math.max(0, m.options.indexOf((st.values || {})[key]));
+    return { title: m.name.toUpperCase(), options: m.options, cur };
+}
+
+export function drawValueList(ctx, st) {
+    const l = listFor(st);
+    if (!l) return false;
+    const n = l.options.length;
+    const ROWS = 5, ROW_H = 9, TOP = 11;
+    const cols = n > ROWS ? 2 : 1;
+    const per = ROWS * cols;
+    const first = Math.floor(l.cur / per) * per;
+    const colW = cols === 2 ? 62 : 124;
+    ctx.fillRect(0, 0, 128, 64, 0);
+    ctx.print(1, 1, l.title, 1);
+    const who = st.settings && GLOBAL_KEYS.has(st.listKey) ? "E-1" : "T" + (st.focus + 1) + " " + cut(trackName(st, st.focus), 8);
+    ctx.print(127 - ctx.textWidth(who), 1, who, 1);
+    ctx.fillRect(0, 9, 128, 1, 1);
+    for (let j = 0; j < per && first + j < n; j++) {
+        const i = first + j;
+        const x = Math.floor(j / ROWS) * 64, y = TOP + (j % ROWS) * ROW_H;
+        const on = i === l.cur;
+        if (on) ctx.fillRect(x, y, colW, ROW_H, 1);
+        ctx.print(x + 3, y + 1, cut(String(l.options[i]).toUpperCase(), cols === 2 ? 9 : 20), on ? 0 : 1);
+    }
+    if (n > per) {                                /* where this page sits in the whole list */
+        const pages = Math.ceil(n / per), pg = Math.floor(l.cur / per);
+        const h = Math.max(4, Math.floor(45 / pages));
+        ctx.fillRect(126, TOP + Math.floor((45 - h) * pg / (pages - 1)), 2, h, 1);
+    }
+    const foot = n > per ? (l.cur + 1) + "/" + n : "";
+    ctx.print(1, 57, "TURN, OR TAP A PAD", 1);
+    ctx.print(127 - ctx.textWidth(foot), 57, foot, 1);
+    return true;
 }

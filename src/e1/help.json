@@ -1,120 +1,180 @@
 {
   "title": "E-1",
   "children": [
-    { "title": "Overview", "lines": [
-      "16 Euclidean tracks.",
-      "Top 16 pads: tracks.",
-      "Step row: pulses of",
-      " the selected track.",
-      "Bottom 16 pads: the",
-      " last knob touched.",
-      "Knobs: the page.",
-      "Shift: 2nd function.",
-      "Jog: page.",
-      "Jog click: home.",
-      "Shift+jog: tempo." ] },
-    { "title": "Tracks", "lines": [
-      "Tap: select.",
-      "Hold one or more:",
-      " knobs, value pads",
-      " and perform act on",
-      " the held tracks.",
-      "Shift+tap: mute now.",
-      "Copy+tap+tap: copy.",
-      "Delete+tap: clear." ] },
-    { "title": "Steps", "lines": [
-      "Tap: toggle a step.",
-      "Shift+step: Steps.",
-      "Left/Right: steps",
-      " 17-64.",
-      "Shift+Left/Right:",
-      " rotate.",
-      "Delete+step: clear",
-      " hand edits." ] },
-    { "title": "Bottom pads", "lines": [
-      "Touch a knob: the",
-      " pads show values",
-      " for it. Tap to set.",
-      "Pitch: keyboard.",
-      " Tap adds or drops",
-      " a note and plays",
-      " it. Shift+tap:",
-      " listen only.",
-      "+/-: pad page, or",
-      " keyboard octave." ] },
-    { "title": "Left buttons", "lines": [
-      "Hold, or tap to",
-      " latch. Top down:",
-      "Pattern, Cycles,",
-      "Temp, Perform.",
-      "Temp is hold only." ] },
-    { "title": "Pattern", "lines": [
-      "Pads: 16 patterns.",
-      "Tap: plays on the",
-      " quantize line.",
-      "Tap again: now.",
-      "Shift+pad: save.",
-      "Copy+pad+pad: copy.",
-      "Delete+pad: clear.",
-      "Capture: save to",
-      " next empty slot." ] },
-    { "title": "Cycles", "lines": [
-      "Pads: cycles 1-16.",
-      "Tap: edit only that",
-      " cycle. Tap again:",
-      " back to all.",
-      "Hold one, tap more:",
-      " edit several.",
-      "Shift+pad: number",
-      " of cycles.",
-      "Delete+knob touch:",
-      " clear its edits." ] },
-    { "title": "Temp", "lines": [
-      "Hold Temp and edit.",
-      "Let go: undone.",
-      "Capture while held:",
-      " keep the edits." ] },
-    { "title": "Perform", "lines": [
-      "16 moves on pads.",
-      "Hold: on while held.",
-      "Shift+pad: latch.",
-      "Tap latched: off.",
-      "Hold track pads to",
-      " limit the tracks.",
-      "Shift+Perform:",
-      " all moves off." ] },
-    { "title": "Mute and Loop", "lines": [
-      "Mute+track pads:",
-      " applied together",
-      " when you let go.",
-      "Loop held: freeze",
-      " the last 4 steps.",
-      "Loop+step: length." ] },
-    { "title": "Random", "lines": [
-      "Hold Sample, turn a",
-      " knob: how far its",
-      " value wanders.",
-      "Tone page: Rnd is",
-      " the chance, Shift",
-      " Rate how often.",
-      "Delete+Sample:",
-      " clear random." ] },
-    { "title": "Play and clock", "lines": [
-      "Play: start/stop.",
-      "Shift+Play: clock",
-      " Move/Internal/",
-      " Computer.",
-      "Shift+Menu: output",
-      " Move/Computer/Both.",
-      "Undo: step back." ] },
-    { "title": "Menu and exit", "lines": [
-      "Menu: settings,",
-      " sets, patterns,",
-      " presets, tracks.",
-      "Jog: move. Click:",
-      " select. Menu or",
-      " Left: back.",
-      "Back: hide E-1. It",
-      " keeps playing." ] }
+    {
+      "title": "Overview",
+      "lines": [
+        "16 Euclidean tracks.",
+        "Top 16 pads: tracks.",
+        "Step row: pulses of",
+        " the selected track.",
+        "Bottom 16 pads: the",
+        " last knob touched.",
+        "Knobs: the page.",
+        "Shift: 2nd function.",
+        "Jog: page.",
+        "Jog click: home.",
+        "Shift+jog: tempo.",
+        "Knob LEDs: rows 1-4",
+        " and 5-8. White =",
+        " the knob selected.",
+        "Named values show",
+        " a list as you turn."
+      ]
+    },
+    {
+      "title": "Tracks",
+      "lines": [
+        "Tap: select.",
+        "Hold one or more:",
+        " knobs, value pads",
+        " and perform act on",
+        " the held tracks.",
+        "Shift+tap: mute now.",
+        "Copy+tap+tap: copy.",
+        "Delete+tap: clear."
+      ]
+    },
+    {
+      "title": "Steps",
+      "lines": [
+        "Tap: toggle a step.",
+        "Shift+step: Steps.",
+        "Left/Right: steps",
+        " 17-64.",
+        "Shift+Left/Right:",
+        " rotate.",
+        "Delete+step: clear",
+        " hand edits."
+      ]
+    },
+    {
+      "title": "Bottom pads",
+      "lines": [
+        "Touch a knob: the",
+        " pads show values",
+        " for it. Tap to set.",
+        "Pitch: keyboard.",
+        " Tap adds or drops",
+        " a note and plays",
+        " it. Shift+tap:",
+        " listen only.",
+        "+/-: pad page, or",
+        " keyboard octave."
+      ]
+    },
+    {
+      "title": "Left buttons",
+      "lines": [
+        "Hold, or tap to",
+        " latch. Top down:",
+        "Pattern, Cycles,",
+        "Temp, Perform.",
+        "Temp is hold only."
+      ]
+    },
+    {
+      "title": "Pattern",
+      "lines": [
+        "Pads: 16 patterns.",
+        "Tap: plays on the",
+        " quantize line.",
+        "Tap again: now.",
+        "Shift+pad: save.",
+        "Copy+pad+pad: copy.",
+        "Delete+pad: clear.",
+        "Capture: save to",
+        " next empty slot."
+      ]
+    },
+    {
+      "title": "Cycles",
+      "lines": [
+        "Pads: cycles 1-16.",
+        "Tap: edit only that",
+        " cycle. Tap again:",
+        " back to all.",
+        "Hold one, tap more:",
+        " edit several.",
+        "Shift+pad: number",
+        " of cycles.",
+        "Delete+knob touch:",
+        " clear its edits."
+      ]
+    },
+    {
+      "title": "Temp",
+      "lines": [
+        "Hold Temp and edit.",
+        "Let go: undone.",
+        "Capture while held:",
+        " keep the edits."
+      ]
+    },
+    {
+      "title": "Perform",
+      "lines": [
+        "16 moves on pads.",
+        "Hold: on while held.",
+        "Shift+pad: latch.",
+        "Tap latched: off.",
+        "Hold track pads to",
+        " limit the tracks.",
+        "Shift+Perform:",
+        " all moves off."
+      ]
+    },
+    {
+      "title": "Mute and Loop",
+      "lines": [
+        "Mute+track pads:",
+        " applied together",
+        " when you let go.",
+        "Loop held: freeze",
+        " the last 4 steps.",
+        "Loop+step: length."
+      ]
+    },
+    {
+      "title": "Random",
+      "lines": [
+        "Hold Sample, turn a",
+        " knob: how far its",
+        " value wanders.",
+        "Tone page: Rnd is",
+        " the chance, Shift",
+        " Rate how often.",
+        "Delete+Sample:",
+        " clear random."
+      ]
+    },
+    {
+      "title": "Play and clock",
+      "lines": [
+        "Play: start/stop.",
+        "Shift+Play: clock",
+        " Move/Internal/",
+        " Computer.",
+        "Shift+Menu: output",
+        " Move/Computer/Both.",
+        "Undo: step back."
+      ]
+    },
+    {
+      "title": "Menu and exit",
+      "lines": [
+        "Menu: save, load,",
+        " name, settings.",
+        "Jog: move. Click:",
+        " choose. Back: up.",
+        " Menu: close.",
+        "Back: step out of",
+        " menu, settings,",
+        " cycle edit, latch.",
+        "Hold Back: to Move.",
+        " E-1 keeps playing.",
+        "Shift+Back: quit."
+      ]
+    }
   ]
 }

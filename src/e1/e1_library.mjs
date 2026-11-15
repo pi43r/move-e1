@@ -293,7 +293,7 @@ export const MENU_LAYOUT = {
 };
 const L = MENU_LAYOUT;
 export const TOAST_MS = 1000;
-const HINT = "CLICK OK  MENU BACK";
+const HINT = "CLICK: OK   BACK: UP";
 
 const pad2 = (n) => (n < 9 ? "0" : "") + (n + 1);
 
@@ -366,149 +366,112 @@ export function createMenu({ host, now } = {}) {
         const e = s.sets.find((x) => x.id === id);
         return e ? cleanName(e.name) : "";
     };
-    const patLabel = (s, i) => pad2(i) + " " + (s.patterns[i].filled ? (s.patterns[i].name || "Untitled") : "--");
+    
+    /* An action that finishes closes the menu and reports on the main screen. */
+    const done = (text) => {
+        close();
+        if (host && host.notify) host.notify(text); else say(text);
+    };
+    const pickSet = (s, fn) => s.sets.map((e) => ({ label: cleanName(e.name), mark: e.id === s.setId, fn: () => fn(e.id) }));
+    const pickPreset = (s, fn) => s.presets.map((p, i) => ({ label: cleanName(p && p.name), fn: () => fn(i) }));
+    const none = (text) => [{ label: text, fn: () => pop() }];
 
-    /* Each level kind: title, right-hand header text, and rows built from a
-     * fresh host.state() so names are never stale. */
+    /* One short list of things to do to what is in front of you: the loaded
+     * set, the pattern playing, the selected track. Lists open only to pick a
+     * set or a preset. Housekeeping sits under More. Each level: title,
+     * right-hand header text, and rows built from a fresh host.state(). */
     const LEVELS = {
         root: {
             title: () => "E-1",
             right: (s) => (s.setName || "") + (s.dirty ? "*" : ""),
-            rows: () => [
-                { label: "Settings", fn: () => { act("settings.open"); close(); } },
-                { label: "Sets", fn: () => push({ kind: "sets" }) },
-                { label: "Patterns", fn: () => push({ kind: "patterns" }) },
-                { label: "Track presets", fn: () => push({ kind: "presets" }) },
-                { label: "Tracks", fn: () => push({ kind: "tracks" }) },
-            ],
-        },
-
-        sets: {
-            title: () => "Sets",
-            right: (s) => s.sets.length ? String(s.sets.length) : "",
-            rows: (s, lv) => [
-                { label: 'Save "' + (s.setName || "Untitled") + '"', fn: () => { act("set.save"); say("SAVED"); } },
-                { label: "Save as...", fn: () => ask("Save set as", s.setName || uniqueSetName(s.sets.map((e) => e.name)),
-                    (name) => { act("set.saveAs", { name }); say("SAVED"); }) },
-                { label: "New set...", fn: () => ask("New set", uniqueSetName(s.sets.map((e) => e.name)),
-                    (name) => { act("set.new", { name }); say("CREATED"); }) },
-                ...s.sets.map((e) => ({
-                    label: cleanName(e.name), mark: e.id === s.setId,
-                    fn: () => push({ kind: "set", id: e.id }),
-                })),
-            ],
-        },
-
-        set: {
-            title: (s, lv) => setName(s, lv.id) || "Set",
-            right: () => "SETS",
-            rows: (s, lv) => {
-                const id = lv.id;
-                const load = (save) => {
-                    if (save) act("set.save");
-                    act("set.load", { id });
-                    backFrom(lv);
-                    say("LOADED");
-                };
-                return [
-                    { label: "Load", fn: () => {
-                        if (!s.dirty) return load(false);
-                        confirm("Unsaved changes", "", null, null, { cur: 0, rows: [
-                            { label: "Save then load", fn: () => load(true) },
-                            { label: "Load anyway", fn: () => load(false) },
-                            { label: "Cancel", fn: () => pop() },
-                        ] });
-                    } },
-                    { label: "Rename...", fn: () => ask("Rename set", setName(s, id),
-                        (name) => { act("set.rename", { id, name }); backFrom(lv); say("RENAMED"); }) },
-                    { label: "Duplicate", fn: () => { act("set.duplicate", { id }); backFrom(lv); say("DUPLICATED"); } },
-                    { label: "Delete", fn: () => confirm("Delete set?", setName(s, id),
-                        () => { act("set.delete", { id }); backFrom(lv); say("DELETED"); }, "Delete") },
+            rows: (s) => {
+                const t = s.focus, tn = s.trackNames[t], cp = s.currentPattern;
+                const names = s.sets.map((e) => e.name);
+                const saveAs = () => ask("Save set as", s.setName || uniqueSetName(names),
+                    (name) => { act("set.saveAs", { name }); done("SAVED " + name); });
+                const rows = [
+                    { label: "Save set", fn: () => { if (s.setId == null) return saveAs(); act("set.save"); done("SAVED " + s.setName); } },
+                    { label: "Save set as...", fn: saveAs },
+                    { label: "Load set...", fn: () => push({ kind: "loadSet" }) },
                 ];
-            },
-        },
-
-        patterns: {
-            title: () => "Patterns",
-            right: (s) => s.currentPattern >= 0 ? "P" + pad2(s.currentPattern) : "",
-            rows: (s) => s.patterns.map((p, i) => ({
-                label: patLabel(s, i), mark: i === s.currentPattern,
-                fn: () => push({ kind: "pattern", i }),
-            })),
-        },
-
-        pattern: {
-            title: (s, lv) => "P" + pad2(lv.i) + " " + (s.patterns[lv.i].filled ? (s.patterns[lv.i].name || "Untitled") : "empty"),
-            right: () => "PATT",
-            rows: (s, lv) => {
-                const i = lv.i, filled = s.patterns[i].filled;
-                const rows = [];
-                if (filled) rows.push({ label: "Play", fn: () => { act("pattern.goto", { i }); backFrom(lv); say("PLAY P" + pad2(i)); } });
-                rows.push({ label: "Save here", fn: () => { act("pattern.save", { i }); backFrom(lv); say("SAVED P" + pad2(i)); } });
-                if (filled) {
-                    rows.push({ label: "Rename...", fn: () => ask("Pattern " + pad2(i) + " name", s.patterns[i].name,
-                        (name) => { act("pattern.rename", { i, name }); backFrom(lv); say("RENAMED"); }) });
-                    rows.push({ label: "Copy to...", fn: () => push({ kind: "copyTo", i, parent: lv }) });
-                    rows.push({ label: "Clear", fn: () => confirm("Clear P" + pad2(i) + "?", "",
-                        () => { act("pattern.clear", { i }); backFrom(lv); say("CLEARED"); }, "Clear") });
-                }
+                if (cp >= 0 && s.patterns[cp].filled)
+                    rows.push({ label: "Name pattern P" + (cp + 1) + "...", fn: () => ask("Pattern " + (cp + 1) + " name", s.patterns[cp].name,
+                        (name) => { act("pattern.rename", { i: cp, name }); done("P" + (cp + 1) + " " + name); }) });
+                rows.push({ label: "Name track T" + (t + 1) + "...", fn: () => ask("Track " + (t + 1) + " name", tn || "T" + (t + 1),
+                    (name) => { act("track.rename", { t, name }); done("T" + (t + 1) + " " + name); }) });
+                rows.push({ label: "Save T" + (t + 1) + " as preset...", fn: () => ask("Preset name", tn || "T" + (t + 1),
+                    (name) => { act("preset.save", { name }); done("PRESET SAVED"); }) });
+                rows.push({ label: "Load preset to T" + (t + 1) + "...", fn: () => push({ kind: "loadPreset" }) });
+                rows.push({ label: "Settings", fn: () => { act("settings.open"); close(); } });
+                rows.push({ label: "More...", fn: () => push({ kind: "more" }) });
                 return rows;
             },
         },
 
-        copyTo: {
-            title: (s, lv) => "Copy P" + pad2(lv.i) + " to",
-            right: () => "",
-            rows: (s, lv) => s.patterns.map((p, to) => ({
-                label: patLabel(s, to), mark: to === lv.i,
-                fn: () => {
-                    if (to === lv.i) return say("SAME SLOT");
-                    act("pattern.copy", { from: lv.i, to });
-                    backFrom(lv.parent);
-                    say("COPIED TO P" + pad2(to));
-                },
-            })),
-        },
-
-        presets: {
-            title: () => "Track presets",
-            right: (s) => "T" + (s.focus + 1),
+        loadSet: {
+            title: () => "Load set",
+            right: (s) => s.sets.length ? String(s.sets.length) : "",
             rows: (s) => {
-                const tn = s.trackNames[s.focus];
-                return [
-                    { label: "Save T" + (s.focus + 1) + (tn ? " " + tn : "") + "...",
-                      fn: () => ask("Preset name", tn || "T" + (s.focus + 1),
-                        (name) => { act("preset.save", { name }); say("SAVED"); }) },
-                    ...s.presets.map((p, i) => ({
-                        label: cleanName(p && p.name), fn: () => push({ kind: "preset", i }),
-                    })),
-                ];
+                if (!s.sets.length) return none("No saved sets yet");
+                return pickSet(s, (id) => {
+                    const load = (save) => { if (save) act("set.save"); act("set.load", { id }); done("LOADED " + setName(s, id)); };
+                    if (!s.dirty) return load(false);
+                    confirm("Unsaved changes", "", null, null, { cur: 0, rows: [
+                        { label: "Save, then load", fn: () => load(true) },
+                        { label: "Load without saving", fn: () => load(false) },
+                        { label: "Cancel", fn: () => pop() },
+                    ] });
+                });
             },
         },
 
-        preset: {
-            title: (s, lv) => cleanName(s.presets[lv.i] && s.presets[lv.i].name),
-            right: () => "PRESET",
+        loadPreset: {
+            title: (s) => "Preset to T" + (s.focus + 1),
+            right: () => "",
+            rows: (s) => {
+                if (!s.presets.length) return none("No presets yet");
+                return pickPreset(s, (i) => { act("preset.load", { i }); done("LOADED " + cleanName(s.presets[i].name)); });
+            },
+        },
+
+        more: {
+            title: () => "More",
+            right: () => "",
+            rows: (s) => {
+                const names = s.sets.map((e) => e.name);
+                const rows = [
+                    { label: "New empty set...", fn: () => ask("New set", uniqueSetName(names),
+                        (name) => { act("set.new", { name }); done("NEW SET " + name); }) },
+                ];
+                if (s.setId != null) {
+                    rows.push({ label: "Rename this set...", fn: () => ask("Rename set", s.setName,
+                        (name) => { act("set.rename", { id: s.setId, name }); done("RENAMED"); }) });
+                    rows.push({ label: "Duplicate this set", fn: () => { act("set.duplicate", { id: s.setId }); done("DUPLICATED"); } });
+                }
+                rows.push({ label: "Delete a set...", fn: () => push({ kind: "delSet" }) });
+                rows.push({ label: "Delete a preset...", fn: () => push({ kind: "delPreset" }) });
+                return rows;
+            },
+        },
+
+        delSet: {
+            title: () => "Delete set",
+            right: () => "",
             rows: (s, lv) => {
-                const i = lv.i, pname = cleanName(s.presets[i] && s.presets[i].name);
-                return [
-                    { label: "Load into T" + (s.focus + 1), fn: () => { act("preset.load", { i }); backFrom(lv); say("LOADED"); } },
-                    { label: "Rename...", fn: () => ask("Rename preset", pname,
-                        (name) => { act("preset.rename", { i, name }); backFrom(lv); say("RENAMED"); }) },
-                    { label: "Delete", fn: () => confirm("Delete preset?", pname,
-                        () => { act("preset.delete", { i }); backFrom(lv); say("DELETED"); }, "Delete") },
-                ];
+                if (!s.sets.length) return none("No saved sets");
+                return pickSet(s, (id) => confirm("Delete set?", setName(s, id),
+                    () => { act("set.delete", { id }); backFrom(lv); say("DELETED"); }, "Delete"));
             },
         },
 
-        tracks: {
-            title: () => "Tracks",
-            right: (s) => "T" + (s.focus + 1),
-            rows: (s) => s.trackNames.map((n, t) => ({
-                label: "T" + (t + 1) + (n ? " " + n : ""), mark: t === s.focus,
-                fn: () => ask("Track " + (t + 1) + " name", n || "T" + (t + 1),
-                    (name) => { act("track.rename", { t, name }); say("RENAMED"); }),
-            })),
+        delPreset: {
+            title: () => "Delete preset",
+            right: () => "",
+            rows: (s, lv) => {
+                if (!s.presets.length) return none("No presets");
+                return pickPreset(s, (i) => confirm("Delete preset?", cleanName(s.presets[i].name),
+                    () => { act("preset.delete", { i }); backFrom(lv); say("DELETED"); }, "Delete"));
+            },
         },
 
         confirm: {
