@@ -138,9 +138,16 @@ function doubleTap(name) {
     return d;
 }
 
+/* Steps picked for step edit, as a BigInt mask. */
+function big(h) { try { return BigInt("0x" + (h || "0")); } catch (e) { return 0n; } }
+function stepMask() { return st.snap ? big(st.snap.sm) : 0n; }
+function leaveStepEdit() { setP("t" + (st.focus + 1) + ":stepedit", "0"); stepPicking = false; toast("STEPS", "ALL"); }
+let stepPicking = false, pickedNow = 0n;         /* Shift is still down from the first pick: more steps join */
+
 function setFocus(t) {
     if (t === st.focus) return;
     if (st.snap && (st.snap.em | 0)) setP("t" + (st.focus + 1) + ":edit", "0");   /* leave cycle edit behind */
+    if (stepMask() !== 0n) setP("t" + (st.focus + 1) + ":stepedit", "0");
     st.focus = t;
     st.stepPage = 0;
     knobAcc.fill(0);
@@ -480,6 +487,7 @@ function cyclePress(i, on) {
 
 function goHome() {
     if (st.snap && (st.snap.em | 0)) setP("t" + (st.focus + 1) + ":edit", "0");
+    if (stepMask() !== 0n) setP("t" + (st.focus + 1) + ":stepedit", "0");
     st.layerLock = null; st.layerHeld = null; st.saveMode = false; st.muteLock = false;
     if (st.settings) { st.settings = false; reselect(); }
     if (menu && menu.isOpen()) menu.close();
@@ -531,8 +539,26 @@ function onStep(idx, on) {
     const steps = (st.snap && st.snap.sn) || parseInt(st.values.steps, 10) || 16;
     const f = "t" + (st.focus + 1) + ":";
     if (st.fzOn) { st.fzLen = idx + 1; freezeApply(); freezeSay(); return; }
-    if (st.shift) { setTrack("steps", idx + 1); toast("STEPS", (idx + 1) + " " + who()); return; }
-    if (st.delHeld) { checkpoint(); setP(f + "clearedits", "1"); toast("CLEAR", "HAND EDITS"); edited(); return; }
+    if (st.shift) {
+        /* Pick this step: knobs and value pads now change only it. */
+        if (idx >= steps) return;
+        const bit = 1n << BigInt(idx);
+        const m = stepPicking ? (stepMask() | pickedNow | bit) : bit;
+        pickedNow = m; stepPicking = true;
+        if (!((big(st.snap && st.snap.h) >> BigInt(idx)) & 1n)) { checkpoint(); setP(f + "toggle", idx); edited(); }
+        setP(f + "stepedit", m.toString(16));
+        toast("STEP", "EDIT " + (idx + 1));
+        return;
+    }
+    if (st.delHeld) {
+        const bit = 1n << BigInt(idx);
+        if ((big(st.snap && st.snap.se) | stepMask()) & bit) {
+            checkpoint(); setP(f + "clearstep", idx + 1);
+            if (stepMask() & bit) setP(f + "stepedit", (stepMask() & ~bit).toString(16));
+            toast("CLEAR", "STEP " + (idx + 1)); edited(); return;
+        }
+        checkpoint(); setP(f + "clearedits", "1"); toast("CLEAR", "HAND EDITS"); edited(); return;
+    }
     if (idx < steps) { checkpoint(); setP(f + "toggle", idx); edited(); }
 }
 
@@ -703,6 +729,7 @@ function stepBack() {
     if (st.fzLock) { freezeOff(); toast("FREEZE", "OFF"); return true; }
     if (st.settings) { st.settings = false; reselect(); return true; }
     if (st.muteLock) { st.muteLock = false; return true; }
+    if (stepMask() !== 0n) { leaveStepEdit(); return true; }
     if (st.snap && (st.snap.em | 0)) { setP("t" + (st.focus + 1) + ":edit", "0"); toast("CYCLES", "ALL"); return true; }
     if (st.layerLock) { st.layerLock = null; refreshLayer(); return true; }
     return false;
@@ -735,7 +762,7 @@ function onCC(cc, v) {
     const down = v > 0;
     if (cc === CC.del) { st.delHeld = down; dirty = true; return; }
     if (menu && menu.isOpen() && onMenuInput(cc, v)) { dirty = true; return; }
-    if (cc === CC.shift) { st.shift = down; knobAcc.fill(0); dirty = true; return; }
+    if (cc === CC.shift) { st.shift = down; if (!down) stepPicking = false; knobAcc.fill(0); dirty = true; return; }
     if (cc === CC.mute) { onMute(down); return; }
     if (cc === CC.sample) { onTemp(down); return; }
     if (cc === CC.loop) { onFreeze(down); return; }

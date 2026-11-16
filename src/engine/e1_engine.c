@@ -68,7 +68,7 @@ static const int8_t CADENCE[4][8] = {
 
 /* ------------------------------------------------------------ parameters */
 
-enum { F_CYC = 1, F_RC = 2, F_RR = 4 };   /* lockable; random per cycle; random per rate step */
+enum { F_CYC = 1, F_RC = 2, F_RR = 4, F_STEP = 8 };   /* lockable; random per cycle; random per rate step */
 
 typedef struct {
     const char *key;
@@ -86,25 +86,25 @@ static const pdesc_t P[E1_NP] = {
     [E1_P_DIVISION]   = { "division",   0, E1_DIVISIONS - 1, 4, e1_division_names, F_CYC, 0 },
     [E1_P_LENGTH]     = { "length",     0, E1_LENGTHS - 1, 0,   LENGTH_NAMES, 0, 0 },
     [E1_P_CYCLES]     = { "cycles",     1, 16, 4,    NULL,         0, 0 },
-    [E1_P_VELOCITY]   = { "velocity",   1, 127, 100, NULL,         F_CYC | F_RR, 64 },
-    [E1_P_PROB]       = { "prob",       -100, 100, 0, NULL,        F_CYC | F_RR, 100 },
-    [E1_P_SUSTAIN]    = { "sustain",    1, 100, 25,  NULL,         F_CYC | F_RR, 50 },
-    [E1_P_REPEATS]    = { "repeats",    0, E1_REPEATS_INF, 0, NULL, F_CYC | F_RR, 6 },
-    [E1_P_TIME]       = { "time",       0, E1_DIVISIONS - 1, 5, e1_division_names, F_CYC, 0 },
-    [E1_P_RAMP]       = { "ramp",       -100, 100, 0, NULL,        F_CYC, 0 },
-    [E1_P_PACE]       = { "pace",       -100, 100, 0, NULL,        F_CYC, 0 },
+    [E1_P_VELOCITY]   = { "velocity",   1, 127, 100, NULL,         F_STEP | F_CYC | F_RR, 64 },
+    [E1_P_PROB]       = { "prob",       -100, 100, 0, NULL,        F_STEP | F_CYC | F_RR, 100 },
+    [E1_P_SUSTAIN]    = { "sustain",    1, 100, 25,  NULL,         F_STEP | F_CYC | F_RR, 50 },
+    [E1_P_REPEATS]    = { "repeats",    0, E1_REPEATS_INF, 0, NULL, F_STEP | F_CYC | F_RR, 6 },
+    [E1_P_TIME]       = { "time",       0, E1_DIVISIONS - 1, 5, e1_division_names, F_STEP | F_CYC, 0 },
+    [E1_P_RAMP]       = { "ramp",       -100, 100, 0, NULL,        F_STEP | F_CYC, 0 },
+    [E1_P_PACE]       = { "pace",       -100, 100, 0, NULL,        F_STEP | F_CYC, 0 },
     [E1_P_FILL]       = { "fill",       0, 16, 2,    NULL,         F_CYC, 0 },
     [E1_P_DELAY]      = { "delay",      -50, 50, 0,  NULL,         0, 0 },
-    [E1_P_PITCH]      = { "pitch",      -36, 36, 0,  NULL,         F_CYC | F_RC, 7 },
-    [E1_P_HARMONY]    = { "harmony",    -16, 16, 0,  NULL,         F_CYC | F_RC, 4 },
-    [E1_P_VOICING]    = { "voicing",    -16, 16, 0,  NULL,         F_CYC | F_RR, 4 },
-    [E1_P_STYLE]      = { "style",      0, 5, 0,     STYLE_NAMES,  F_CYC, 0 },
-    [E1_P_RANGE]      = { "range",      -16, 16, 0,  NULL,         F_CYC | F_RR, 7 },
-    [E1_P_PHRASE]     = { "phrase",     0, 7, 0,     PHRASE_NAMES, F_CYC, 0 },
-    [E1_P_SCALE]      = { "scale",      0, 7, 0,     SCALE_NAMES,  F_CYC, 0 },
-    [E1_P_ROOT]       = { "root",       0, 11, 0,    ROOT_NAMES,   F_CYC, 0 },
-    [E1_P_ACCENT]     = { "accent",     -100, 100, 0, NULL,        F_CYC | F_RR, 100 },
-    [E1_P_GROOVE]     = { "groove",     0, 7, 0,     GROOVE_NAMES, F_CYC, 0 },
+    [E1_P_PITCH]      = { "pitch",      -36, 36, 0,  NULL,         F_STEP | F_CYC | F_RC, 7 },
+    [E1_P_HARMONY]    = { "harmony",    -16, 16, 0,  NULL,         F_STEP | F_CYC | F_RC, 4 },
+    [E1_P_VOICING]    = { "voicing",    -16, 16, 0,  NULL,         F_STEP | F_CYC | F_RR, 4 },
+    [E1_P_STYLE]      = { "style",      0, 5, 0,     STYLE_NAMES,  F_STEP | F_CYC, 0 },
+    [E1_P_RANGE]      = { "range",      -16, 16, 0,  NULL,         F_STEP | F_CYC | F_RR, 7 },
+    [E1_P_PHRASE]     = { "phrase",     0, 7, 0,     PHRASE_NAMES, F_STEP | F_CYC, 0 },
+    [E1_P_SCALE]      = { "scale",      0, 7, 0,     SCALE_NAMES,  F_STEP | F_CYC, 0 },
+    [E1_P_ROOT]       = { "root",       0, 11, 0,    ROOT_NAMES,   F_STEP | F_CYC, 0 },
+    [E1_P_ACCENT]     = { "accent",     -100, 100, 0, NULL,        F_STEP | F_CYC | F_RR, 100 },
+    [E1_P_GROOVE]     = { "groove",     0, 7, 0,     GROOVE_NAMES, F_STEP | F_CYC, 0 },
     [E1_P_TIMING]     = { "timing",     -50, 50, 0,  NULL,         F_CYC | F_RR, 50 },
     [E1_P_SWINGGRID]  = { "swinggrid",  0, 2, 0,     GRID_NAMES,   0, 0 },
     [E1_P_RANDOM]     = { "random",     0, 100, 100, NULL,         0, 0 },
@@ -149,12 +149,47 @@ static int lowest_bit(uint32_t m) { for (int i = 0; i < 16; i++) if (m & (1u << 
 
 /* The value parameter p has in cycle c. `ridx` is the random step for
  * rate-driven random, or -1 to leave that out (used for display). */
-static int eff(const e1_engine_t *e, int ti, int p, int c, int ridx)
+static int sed_find(const e1_track_t *t, int step)
+{
+    if (step < 0) return -1;
+    for (int i = 0; i < E1_SEDITS; i++) if (t->sed_step[i] == step + 1) return i;
+    return -1;
+}
+
+static int sed_get(e1_track_t *t, int step)        /* find or claim a row */
+{
+    int i = sed_find(t, step);
+    if (i >= 0) return i;
+    for (i = 0; i < E1_SEDITS; i++) if (!t->sed_step[i]) {
+        memset(t->sed[i], 0, sizeof t->sed[i]);
+        t->sed_step[i] = (uint8_t)(step + 1);
+        return i;
+    }
+    return -1;
+}
+
+uint64_t e1_steps_edited(const e1_track_t *t)
+{
+    uint64_t m = 0;
+    for (int i = 0; i < E1_SEDITS; i++) {
+        if (!t->sed_step[i]) continue;
+        for (int p = 0; p < E1_NP; p++) if (t->sed[i][p]) { m |= 1ULL << (t->sed_step[i] - 1); break; }
+    }
+    return m;
+}
+
+/* As eff(), plus the step's own offset when the step carries one. */
+static int eff_s(const e1_engine_t *e, int ti, int p, int c, int ridx, int step);
+
+static int eff(const e1_engine_t *e, int ti, int p, int c, int ridx) { return eff_s(e, ti, p, c, ridx, -1); }
+
+static int eff_s(const e1_engine_t *e, int ti, int p, int c, int ridx, int step)
 {
     const e1_track_t *t = &e->t[ti];
     const pdesc_t *d = &P[p];
     int v = t->v[p];
     if ((d->flags & F_CYC) && c >= 0 && c < E1_CYCLES) v += t->cyc[c][p];
+    if ((d->flags & F_STEP) && step >= 0) { int r = sed_find(t, step); if (r >= 0) v += t->sed[r][p]; }
     if (t->rnd[p] && t->v[E1_P_RANDOM] > 0) {
         int idx = (d->flags & F_RC) ? c : ((d->flags & F_RR) ? ridx : -1);
         if (idx >= 0) {
@@ -538,15 +573,15 @@ static int phrase_tenths(int phrase, double ph)
 /* The notes one pulse plays. pidx counts pulses since the cycle began (and
  * goes on counting through repeats), which is what moves mono styles and
  * Climb along. Returns the note count, at most E1_POOL. */
-static int build_notes(const e1_engine_t *e, int ti, int c, int pidx, int shift, int ridx, int *out)
+static int build_notes(const e1_engine_t *e, int ti, int c, int step, int pidx, int shift, int ridx, int *out)
 {
     const e1_track_t *t = &e->t[ti];
     int n = t->pool_n;
     if (n <= 0) return 0;
     if (n > E1_POOL) n = E1_POOL;
-    int scale = eff(e, ti, E1_P_SCALE, c, ridx), root = eff(e, ti, E1_P_ROOT, c, ridx);
-    int pitch = eff(e, ti, E1_P_PITCH, c, ridx), harm = eff(e, ti, E1_P_HARMONY, c, ridx);
-    int voicing = eff(e, ti, E1_P_VOICING, c, ridx), style = eff(e, ti, E1_P_STYLE, c, ridx);
+    int scale = eff_s(e, ti, E1_P_SCALE, c, ridx, step), root = eff_s(e, ti, E1_P_ROOT, c, ridx, step);
+    int pitch = eff_s(e, ti, E1_P_PITCH, c, ridx, step), harm = eff_s(e, ti, E1_P_HARMONY, c, ridx, step);
+    int voicing = eff_s(e, ti, E1_P_VOICING, c, ridx, step), style = eff_s(e, ti, E1_P_STYLE, c, ridx, step);
     int down = eff(e, ti, E1_P_DIR, c, ridx);
 
     int L[E1_POOL + 16], len = n;
@@ -683,7 +718,7 @@ static void fire(e1_engine_t *e, int ti, const slot_t *s, double when, e1_emit_f
 
     int ridx = random_step(t, s->start);
     int64_t id = (int64_t)((uint64_t)s->start * 2654435761ULL + (uint64_t)ti);
-    int prob = eff(e, ti, E1_P_PROB, c, ridx);
+    int prob = eff_s(e, ti, E1_P_PROB, c, ridx, step);
     if (prob < 0 && e1_chance(e->seed, ti, id) < -prob) return;   /* the whole pulse and its repeats */
     if (t->v[E1_P_MUTE] || t->p_solo_mute) return;
 
@@ -711,21 +746,21 @@ static void fire(e1_engine_t *e, int ti, const slot_t *s, double when, e1_emit_f
     static const int PRATE_TICKS[3] = { 4 * E1_TICKS_PER_BAR, 2 * E1_TICKS_PER_BAR, 8 * E1_TICKS_PER_BAR };
     int ptk = PRATE_TICKS[clampi(t->v[E1_P_PHRASERATE], 0, 2)];
     double ph = (double)(s->start % ptk) / (double)ptk;
-    int range = eff(e, ti, E1_P_RANGE, c, ridx);
-    int shift = (int)lrint((double)range * (double)phrase_tenths(eff(e, ti, E1_P_PHRASE, c, ridx), ph) / 10.0);
+    int range = eff_s(e, ti, E1_P_RANGE, c, ridx, step);
+    int shift = (int)lrint((double)range * (double)phrase_tenths(eff_s(e, ti, E1_P_PHRASE, c, ridx, step), ph) / 10.0);
 
     double sp = speed_f(t);
-    int vel = eff(e, ti, E1_P_VELOCITY, c, ridx);
-    int accent = eff(e, ti, E1_P_ACCENT, c, ridx);
-    if (accent) vel += accent * 6 * groove_tenths(eff(e, ti, E1_P_GROOVE, c, ridx), step) / 100;
+    int vel = eff_s(e, ti, E1_P_VELOCITY, c, ridx, step);
+    int accent = eff_s(e, ti, E1_P_ACCENT, c, ridx, step);
+    if (accent) vel += accent * 6 * groove_tenths(eff_s(e, ti, E1_P_GROOVE, c, ridx, step), step) / 100;
     if (t->p_accent) vel = 127;
     vel = clampi(vel, 1, 127);
 
-    double len = (double)s->dur * (double)eff(e, ti, E1_P_SUSTAIN, c, ridx) / 50.0 / sp;
-    int repeats = eff(e, ti, E1_P_REPEATS, c, ridx);
-    double interval = (double)div_ticks(eff(e, ti, E1_P_TIME, c, ridx)) / sp;
-    double pace = 1.0 + (double)eff(e, ti, E1_P_PACE, c, ridx) / 200.0;
-    int ramp = eff(e, ti, E1_P_RAMP, c, ridx);
+    double len = (double)s->dur * (double)eff_s(e, ti, E1_P_SUSTAIN, c, ridx, step) / 50.0 / sp;
+    int repeats = eff_s(e, ti, E1_P_REPEATS, c, ridx, step);
+    double interval = (double)div_ticks(eff_s(e, ti, E1_P_TIME, c, ridx, step)) / sp;
+    double pace = 1.0 + (double)eff_s(e, ti, E1_P_PACE, c, ridx, step) / 200.0;
+    int ramp = eff_s(e, ti, E1_P_RAMP, c, ridx, step);
     if (t->p_ratchet >= 2) {                     /* a held ratchet replaces the track's repeats */
         repeats = t->p_ratchet - 1;
         interval = (double)s->dur / sp / (double)t->p_ratchet;
@@ -739,7 +774,7 @@ static void fire(e1_engine_t *e, int ti, const slot_t *s, double when, e1_emit_f
         if (t->chain[k].left > 1000) t->chain[k].left = 0;
 
     int notes[E1_POOL];
-    int n = build_notes(e, ti, c, pidx, shift, ridx, notes);
+    int n = build_notes(e, ti, c, step, pidx, shift, ridx, notes);
     int drop = prob > 0 ? prob : 0;
     for (int j = 0; j < n; j++) {
         if (drop && e1_chance(e->seed, ti, (int64_t)((uint64_t)id * 31u + (uint64_t)j + 1u)) < drop) continue;
@@ -787,7 +822,7 @@ static void run_chains(e1_engine_t *e, int ti, double now, e1_emit_fn emit, void
             ch->left--;
             if (!(t->v[E1_P_MUTE] || t->p_solo_mute)) {
                 int notes[E1_POOL];
-                int n = build_notes(e, ti, ch->cyc, ch->pidx + ch->k, ch->shift, ch->ridx, notes);
+                int n = build_notes(e, ti, ch->cyc, ch->step, ch->pidx + ch->k, ch->shift, ch->ridx, notes);
                 int vel = clampi(ch->vel + ch->ramp * 32 * ch->k / 100, 1, 127);
                 double len = ch->len;
                 if (len > ch->interval * 0.9) len = ch->interval * 0.9;
@@ -1090,6 +1125,28 @@ static int set_track(e1_engine_t *e, int ti, const char *key, const char *val, i
         for (char *q = t->name; *q; q++) if ((unsigned char)*q < 0x20 || *q == 0x7F || *q == '=' || *q == '"' || *q == '\\') *q = ' ';
         return 1;
     }
+    /* s<N>.<key>: one step's offset, as saved */
+    if (key[0] == 's' && key[1] >= '0' && key[1] <= '9') {
+        const char *dot = strchr(key, '.');
+        if (dot) {
+            int st = atoi(key + 1) - 1, r;
+            if (st < 0 || st >= 64 || (p = find_param(dot + 1)) < 0 || !(P[p].flags & F_STEP)) return 0;
+            if ((r = sed_get(t, st)) < 0) return 0;
+            t->sed[r][p] = (int16_t)clampi(atoi(val), P[p].lo - P[p].hi, P[p].hi - P[p].lo);
+            return 1;
+        }
+    }
+    if (strcmp(key, "stepedit") == 0) {
+        t->step_mask = strtoull(val, NULL, 16);
+        return 1;
+    }
+    if (strcmp(key, "clearstep") == 0) {
+        int st = atoi(val) - 1;
+        if (st < 0) { memset(t->sed_step, 0, sizeof t->sed_step); t->step_mask = 0; return 1; }   /* 0 = every step */
+        int r = sed_find(t, st);
+        if (r >= 0) t->sed_step[r] = 0;
+        return 1;
+    }
     if (strcmp(key, "edit") == 0) {
         t->edit_mask = (uint16_t)strtoul(val, NULL, 16);
         return 1;
@@ -1116,6 +1173,7 @@ static int set_track(e1_engine_t *e, int ti, const char *key, const char *val, i
         if ((lane = parse_lane(val, "cc")) >= 0) { for (int c = 0; c < E1_CYCLES; c++) t->cc_cyc[c][lane] = 0; t->cc_rnd[lane] = 0; return 1; }
         if ((p = find_param(val)) < 0) return 0;
         for (int c = 0; c < E1_CYCLES; c++) t->cyc[c][p] = 0;
+        for (int i = 0; i < E1_SEDITS; i++) t->sed[i][p] = 0;
         t->rnd[p] = 0;
         return 1;
     }
@@ -1128,6 +1186,19 @@ static int set_track(e1_engine_t *e, int ti, const char *key, const char *val, i
     if ((p = find_param(key)) < 0) return 0;
     const pdesc_t *d = &P[p];
     int v;
+    if (!raw && t->step_mask && (d->flags & F_STEP)) {
+        int ok = 0;
+        for (int st = 0; st < 64; st++) {
+            if (!(t->step_mask & (1ULL << st))) continue;
+            int r = sed_get(t, st);
+            if (r < 0) continue;                 /* every row is taken */
+            int cur = clampi(t->v[p] + t->sed[r][p], d->lo, d->hi);
+            if (!parse_value(val, cur, d->lo, d->hi, d->names, &v)) return 0;
+            t->sed[r][p] = (int16_t)(v - t->v[p]);
+            ok = 1;
+        }
+        return ok;
+    }
     if (em && (d->flags & F_CYC)) {
         for (int c = 0; c < E1_CYCLES; c++) {
             if (!(em & (1u << c))) continue;
@@ -1171,7 +1242,11 @@ static int shown(const e1_engine_t *e, int ti, int p)
     const e1_track_t *t = &e->t[ti];
     int c = t->edit_mask ? lowest_bit(t->edit_mask) : -1;
     int v = t->v[p];
-    if (c >= 0 && (P[p].flags & F_CYC)) v += t->cyc[c][p];
+    if (t->step_mask && (P[p].flags & F_STEP)) {
+        int st = 0; while (st < 63 && !(t->step_mask & (1ULL << st))) st++;
+        int r = sed_find(t, st);
+        if (r >= 0) v += t->sed[r][p];
+    } else if (c >= 0 && (P[p].flags & F_CYC)) v += t->cyc[c][p];
     return clampi(v, P[p].lo, P[p].hi);
 }
 
@@ -1255,6 +1330,11 @@ int e1_dump_track(const e1_engine_t *e, int track, char *buf, int len)
         pos = appendf(buf, len, pos, "ccn%d=%d\n", l + 1, t->cc_num[l]);
         if (t->cc_val[l] >= 0) pos = appendf(buf, len, pos, "cc%d=%d\n", l + 1, t->cc_val[l]);
         if (t->cc_rnd[l]) pos = appendf(buf, len, pos, "r.cc%d=%d\n", l + 1, t->cc_rnd[l]);
+    }
+    for (int i = 0; i < E1_SEDITS; i++) {
+        if (!t->sed_step[i]) continue;
+        for (int p = 0; p < E1_NP; p++)
+            if (t->sed[i][p]) pos = appendf(buf, len, pos, "s%d.%s=%d\n", t->sed_step[i], P[p].key, t->sed[i][p]);
     }
     for (int c = 0; c < E1_CYCLES; c++) {
         for (int p = 0; p < E1_NP; p++)

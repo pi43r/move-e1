@@ -826,6 +826,33 @@ static void test_repeats(void)
 
 /* ------------------------------------------------- velocity, prob, random */
 
+static void test_step_edit(void)
+{
+    e1_engine_t *e = eng_new(); cap_t *c = cap_new();
+    setup(e); fresh(e, 0); S(e, 0, "velocity", "60");          /* 4 pulses on steps 0 4 8 12 */
+    S(e, 0, "stepedit", "10");                                 /* step 5 (index 4) */
+    S(e, 0, "velocity", "100"); S(e, 0, "repeats", "2");
+    char b[32]; e1_get(e, 0, "velocity", b, sizeof b);
+    CHECK(strcmp(b, "100") == 0);                              /* the picked step's value shows */
+    S(e, 0, "stepedit", "0");
+    e1_get(e, 0, "velocity", b, sizeof b);
+    CHECK(strcmp(b, "60") == 0 && e->t[0].v[E1_P_REPEATS] == 0);
+    CHECK(e1_steps_edited(&e->t[0]) == 0x10);
+    e1_start(e, 0); run(e, c, 0, 383, 1);
+    non_t o[16]; int n = ons(c, 0, o, 16);
+    CHECK(n == 6 && o[0].vel == 60 && o[1].vel == 100);        /* only that step: louder, two repeats */
+    /* survives a dump and load */
+    char d[8192]; e1_dump_track(e, 0, d, sizeof d);
+    CHECK(strstr(d, "s5.velocity=40") != NULL);
+    fresh(e, 0); e1_load_track(e, 0, d);
+    CHECK(e1_steps_edited(&e->t[0]) == 0x10);
+    S(e, 0, "clearstep", "5");
+    CHECK(e1_steps_edited(&e->t[0]) == 0);
+    cap_clear(c); e1_start(e, 0); run(e, c, 0, 383, 1);
+    CHECK(ons(c, 0, o, 16) == 4);
+    free(e); free(c);
+}
+
 static void test_velocity(void)
 {
     e1_engine_t *e = eng_new(); cap_t *c = cap_new();
@@ -1341,6 +1368,7 @@ int main(int argc, char **argv)
     test_choke_tail();
     test_repeats();
     test_velocity();
+    test_step_edit();
     test_prob();
     test_random();
     test_cc();

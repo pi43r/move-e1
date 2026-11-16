@@ -37,6 +37,7 @@ extern "C" {
 #define E1_VOICES        12     /* sounding notes tracked per track */
 #define E1_CHAINS        3      /* repeat chains in flight per track */
 #define E1_NAME_LEN      13
+#define E1_SEDITS        16     /* steps per track that can carry their own values */
 #define E1_PPQN          96
 #define E1_TICKS_PER_BAR (E1_PPQN * 4)
 #define E1_REPEATS_INF   49     /* Repeats value that means "until the next pulse" */
@@ -87,6 +88,8 @@ typedef struct {
     int16_t  v[E1_NP];                         /* base values */
     int16_t  cyc[E1_CYCLES][E1_NP];            /* per-cycle offsets, 0 = no edit */
     int8_t   rnd[E1_NP];                       /* random amount, -100..100 */
+    uint8_t  sed_step[E1_SEDITS];              /* step + 1 of each edited step, 0 = free */
+    int16_t  sed[E1_SEDITS][E1_NP];            /* per-step offsets */
     uint64_t add_mask, del_mask;               /* hand edits, all cycles */
     uint64_t cadd[E1_CYCLES], cdel[E1_CYCLES]; /* hand edits in one cycle */
     uint8_t  pool[E1_POOL];                    /* MIDI notes, ascending */
@@ -104,6 +107,7 @@ typedef struct {
     int      cur_step;     /* step last played, -1 before start */
     int      cur_cycle;
     uint16_t edit_mask;    /* cycles picked for editing; they loop */
+    uint64_t step_mask;    /* steps picked for editing */
     uint8_t  flash;        /* set when the track sounded, UI clears */
     e1_voice_t voice[E1_VOICES];
     e1_chain_t chain[E1_CHAINS];
@@ -166,6 +170,7 @@ int  e1_steps(const e1_engine_t *e, int track, int cycle);
 int  e1_display_cycle(const e1_track_t *t);
 /* Bit c set when cycle c differs from the base. */
 uint32_t e1_cycles_edited(const e1_track_t *t);
+uint64_t e1_steps_edited(const e1_track_t *t);   /* steps that carry their own values */
 
 int  e1_ports(const e1_engine_t *e, const e1_track_t *t);
 

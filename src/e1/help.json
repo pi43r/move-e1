@@ -75,7 +75,9 @@
       "title": "Steps",
       "lines": [
         "Tap: toggle a step.",
-        "Shift+step: Steps.",
+        "Shift+step: edit",
+        " only that step.",
+        " Back: all steps.",
         "Left/Right: steps",
         " 17-64.",
         "Shift+Left/Right:",

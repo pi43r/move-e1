@@ -191,7 +191,7 @@
 <text x="220" y="550" font-size="14" fill="#666666" text-anchor="end">Start, stop · Shift: clock</text>
 <text x="220" y="567" font-size="14" fill="#666666" text-anchor="end">Record stays Move's</text>
 <polyline points="232,525 266,515" fill="none" stroke="#aaaaaa" stroke-width="1.4"/>
-<text x="750" y="591" font-size="18" fill="#262626" text-anchor="middle">Step row · pulses of the selected track. Tap: toggle a step. Shift + step: Steps</text>
+<text x="750" y="591" font-size="18" fill="#262626" text-anchor="middle">Step row · pulses of the selected track. Tap: toggle a step. Shift + step: edit that step</text>
 <text x="750" y="618" font-size="15" fill="#666666" text-anchor="middle">Top two pad rows: tracks 1-16 · bottom two rows: follow the touched knob</text>
 </g>
 </svg>

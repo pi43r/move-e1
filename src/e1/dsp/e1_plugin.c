@@ -482,7 +482,8 @@ static int json_ui(e1_inst_t *s, char *buf, int len)
     for (int i = 0; i < E1_TRACKS; i++) PUT("%s%d", i ? "," : "", s->e.t[i].cur_step);
     PUT("],\"nm\":[");
     for (int i = 0; i < E1_TRACKS; i++) PUT("%s\"%s\"", i ? "," : "", s->e.t[i].name);
-    PUT("],\"h\":\"%llx\",\"p\":[", (unsigned long long)e1_hit_mask(&s->e, s->focus, f->edit_mask || s->e.running ? dc : -1, f->p_fill));
+    PUT("],\"sm\":\"%llx\",\"se\":\"%llx\"", (unsigned long long)f->step_mask, (unsigned long long)e1_steps_edited(f));
+    PUT(",\"h\":\"%llx\",\"p\":[", (unsigned long long)e1_hit_mask(&s->e, s->focus, f->edit_mask || s->e.running ? dc : -1, f->p_fill));
     for (int i = 0; i < E1_NP; i++) PUT("%s%d", i ? "," : "", e1_get_num(&s->e, s->focus, i));
     PUT("],\"rn\":[");
     for (int i = 0; i < E1_NP; i++) PUT("%s%d", i ? "," : "", f->rnd[i]);

@@ -509,13 +509,17 @@ export function ledFrame(st) {
     let hits = 0n;
     try { hits = BigInt("0x" + (s.h || "0")); } catch (e) { hits = 0n; }
     const cur = s.st ? s.st[st.focus] : -1;
+    let sm = 0n, se = 0n;
+    try { sm = BigInt("0x" + (s.sm || "0")); se = BigInt("0x" + (s.se || "0")); } catch (e) { sm = se = 0n; }
     for (let i = 0; i < 16; i++) {
         const idx = (st.stepPage | 0) * 16 + i;
         let c = COL.off;
         if (idx < steps) {
             const on = (hits >> BigInt(idx)) & 1n;
             c = on ? typeColor(s, st.focus) : COL.dim;
+            if ((se >> BigInt(idx)) & 1n) c = COL.red;                  /* carries its own values */
             if (s.r && idx === cur) c = on ? COL.white : COL.lightGrey;
+            if ((sm >> BigInt(idx)) & 1n) c = COL.white;                /* picked for step edit */
             if (st.fzOn) c = idx < (st.fzLen | 0) ? COL.brightBlue : COL.dim;   /* freeze length */
         }
         out[STEP_BASE + i] = c;
@@ -559,6 +563,13 @@ export function footerFor(st) {
     const out = [];
     if (st.fzOn) return [["FREEZE", (st.fzLen | 0) + " ST " + ((st.fzMask & 0xFFFF) === 0xFFFF ? "ALL" : "PART")]];
     if (s.tmp) out.push(["TEMP", ""]);
+    if (s.sm && s.sm !== "0") {
+        const ids = []; let m = 0n;
+        try { m = BigInt("0x" + s.sm); } catch (e) { m = 0n; }
+        for (let i = 0; i < 64; i++) if ((m >> BigInt(i)) & 1n) ids.push(i + 1);
+        out.push(["STEP", cut(ids.join("+"), 12)]);
+        return out;
+    }
     /* Pitch keyboard: the octave on the pads and the pool notes in it. */
     if (st.padKey === "pitch" && !st.settings && !st.layer && !(s.em | 0)) {
         const oct = st.kbOct | 0, lo = 12 * (oct + 2);
@@ -593,7 +604,7 @@ export function pageOptions(st, lib) {
     let title = st.settings ? "E-1" : "T" + (st.focus + 1) + " " + cut(trackName(st, st.focus), 8);
     if (!st.settings && st.held && st.held.size > 1) title = st.held.size + " TRACKS";
     let label = pg.name;
-    if ((s.em | 0) && !st.settings) title = cut(title, 8) + " EDIT";
+    if (((s.em | 0) || (s.sm && s.sm !== "0")) && !st.settings) title = cut(title, 8) + " EDIT";
     if (st.randomHeld) label = "Random";
     else if (st.shift) label = pg.name + " 2";
     return {
@@ -734,7 +745,7 @@ export function drawValueList(ctx, st) {
  * picked for editing are filled and underlined. */
 export function drawCycleStrip(ctx, st) {
     const s = st.snap || {};
-    if (st.settings || st.warn || st.fzOn || st.padKey === "pitch" || (st.toast && st.toast.until > (st.now || 0))) return;
+    if (st.settings || st.warn || st.fzOn || st.padKey === "pitch" || (s.sm && s.sm !== "0") || (st.toast && st.toast.until > (st.now || 0))) return;
     const n = Math.max(1, Math.min(16, parseInt((st.values || {}).cycles, 10) || 1));
     const em = s.em | 0, ce = s.ce | 0, pc = s.pc | 0;
     const x0 = 128 - n * 6, y = 57;

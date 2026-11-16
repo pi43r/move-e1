@@ -2,7 +2,7 @@
 
 E-1 is a 16-track Euclidean performance sequencer for [Ableton Move](https://www.ableton.com/move/). It runs as an overtake tool under [Schwung](https://github.com/charlesvestal/schwung) and plays Move's own tracks, a computer over USB-C, or both.
 
-**Status: build 0.3.5.** E-1 has not yet been submitted to the Schwung catalog. Install it by hand as described below.
+**Status: build 0.3.6.** E-1 has not yet been submitted to the Schwung catalog. Install it by hand as described below.
 
 ![Move E-1 control map](docs/control-map.svg)
 
@@ -33,7 +33,7 @@ The starter set has tracks 1 to 4 (kick, snare, hat, clap, notes 36 to 39) on MI
 | Control | What it does |
 |---|---|
 | Top 16 pads | Tracks 1 to 16. Tap to select. Hold one or more, and knobs, value pads and perform moves apply to the held tracks. |
-| Step row | Shows the selected track's pulses for the cycle on screen. Tap a step to toggle it by hand. Shift + step sets Steps. |
+| Step row | Shows the selected track's pulses. Tap a step to toggle it. Shift + step picks the step for its own values (see Single steps). Red steps carry their own values. |
 | Left / Right | Page through steps 17 to 64. Shift + Left / Right rotates the pattern. |
 | Bottom 16 pads | Follow the last knob you touched: divisions, a keyboard for Pitch, scales, styles, values. |
 | Plus / Minus | Page the bottom pads, or move the Pitch keyboard an octave. |
@@ -44,7 +44,7 @@ The starter set has tracks 1 to 4 (kick, snare, hat, clap, notes 36 to 39) on MI
 | Sample | Temp. Hold it, play with the knobs and pads, let go and everything is back as it was. Press twice to keep Temp on, once more to undo. Capture keeps the changes. |
 | Loop | Freeze. Hold it and the last 4 steps repeat. While it is on, tap a step to set how many steps repeat, and tap track pads to take tracks in or out. Hold track pads first to freeze only those. Press twice to keep it on, once more to stop. |
 | Copy | Hold with two track pads, two pattern pads or two cycle pads to copy the first onto the second. |
-| Delete | Hold with a track pad, pattern pad or cycle pad to clear it. Delete + touch a knob clears that knob's cycle edits and random amount. Delete + step clears hand edits. |
+| Delete | Hold with a track pad, pattern pad or cycle pad to clear it. Delete + touch a knob clears that knob's cycle edits and random amount. Delete + a red step clears its own values. Delete + any other step clears hand edits. |
 | Capture | Save a pattern: press Capture, then tap one of the 16 slots on the bottom pads. Capture again or Back cancels. While Temp is on, Capture keeps the Temp changes. |
 | Undo | Step back, up to 24 steps. |
 | Play | Start and stop. When Move owns the clock, it presses Move's own Play. Shift + Play changes the clock source. |
@@ -147,6 +147,17 @@ The boxes at the bottom right of the screen are the selected track's cycles. The
 Hold one cycle pad and tap others to edit several together. With Cycles held, Shift + pad sets the number of cycles, Copy + two pads copies a cycle, and Delete + pad clears a cycle's edits. The Cycles button blinks red while you are editing a cycle.
 
 Length, Cycles, Delay, Grid, Chan, Output, the random chance and rate, and the Settings knobs always change the whole track.
+
+## Single steps
+
+Any step can have its own values, for example more repeats on one hit to ratchet it.
+
+1. Hold Shift and tap a step. The step is added if it was empty, lights white, and the screen says EDIT.
+2. Keep Shift held and tap more steps to edit them together.
+3. Turn knobs or tap value pads. Only the picked steps change: velocity, chance, sustain, repeats, time, ramp, pace, pitch, harmony, voicing, style, range, phrase, scale, root, accent and groove.
+4. Press Back to edit the whole track again.
+
+Steps with their own values are red on the step row. Delete + a red step clears them. A track holds up to 16 such steps.
 
 ## Random
 
