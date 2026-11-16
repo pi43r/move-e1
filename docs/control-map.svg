@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1560" height="640" viewBox="0 0 1560 640" role="img" aria-labelledby="e1map-title e1map-desc" class="map">
 <title id="e1map-title">Move E-1 control map</title>
-<desc id="e1map-desc">Move top panel with what each control does in E-1 build 0.3. Adapted from the Move Bitwig control reference.</desc>
+<desc id="e1map-desc">Move top panel with what each control does in E-1.</desc>
 <rect class="bg" width="1560" height="640" fill="#fafafa"/>
 <g font-family="Archivo, Helvetica Neue, Arial, sans-serif" fill="#262626">
 <text x="34" y="43" font-size="22" fill="#262626" font-weight="600">Move E-1</text>
