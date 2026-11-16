@@ -234,7 +234,7 @@ export const COL = {
     orange: 3, dimOrange: 69, amber: 4, yellow: 8,
     green: 11, darkGreen: 85,
     cyan: 46, dimCyan: 93,
-    blue: 17, brightBlue: 16, lightGrey: 118,
+    blue: 17, dimBlue: 97, brightBlue: 16, lightGrey: 118,
     purple: 23, pink: 26, dimPink: 115,
 };
 /* Buttons with a white LED take a brightness, not a palette number. */
@@ -355,13 +355,18 @@ export function padModel(st) {
             const note = 12 * (oct + 2) + pc;
             const inScale = scale.includes(((pc - root) % 12 + 12) % 12);
             if (note > 127) continue;
-            let c = inScale ? (black ? COL.blue : COL.white) : COL.grey;
+            /* Keys are dim so the notes in the pool stand out. */
+            let c = inScale ? (black ? COL.dimBlue : COL.grey) : COL.dim;
             if (pool.has(note)) c = COL.orange;
             pads[i] = { c, act: inScale || pool.has(note) ? { k: "pool", note } : null };
         }
         if (key === "pitch") {
-            pads[7] = { c: oct > 3 ? COL.pink : COL.dimPink, act: { k: "oct", d: 1 } };
-            pads[15] = { c: oct < 3 ? COL.pink : COL.dimPink, act: { k: "oct", d: -1 } };
+            /* Octave pads are bright when the pool has notes that way. */
+            const lo = 12 * (oct + 2);
+            let above = false, below = false;
+            for (const n of pool) { if (n >= lo + 12) above = true; if (n < lo) below = true; }
+            pads[7] = { c: above ? COL.pink : COL.dimPink, act: { k: "oct", d: 1 } };
+            pads[15] = { c: below ? COL.pink : COL.dimPink, act: { k: "oct", d: -1 } };
         }
         return { title: key === "pitch" ? "NOTES C" + oct : "ROOT", pads };
     }
@@ -481,14 +486,16 @@ export function ledFrame(st) {
     for (let t = 0; t < 16; t++) {
         const muted = (mu >> t) & 1, soloed = (pf >> (16 + t)) & 1;
         const hit = st.flashUntil && st.flashUntil[t] > now;
-        /* The selected track holds its colour and never flashes. The others
-         * are grey and flash white when they sound. Muted tracks are near black. */
+        /* A track that is on shows its colour, dim, and flashes white when it
+         * sounds. The selected track is bright. Muted tracks are dark, and
+         * grey when selected, so colour always means "this track plays". */
         const sel = t === st.focus || (st.held && st.held.has(t));
         const quiet = muted || soloed;
         let c;
-        if (sel) c = quiet ? typeDim(s, t) : typeColor(s, t);
-        else if (quiet) c = COL.dim;
-        else c = hit ? COL.white : COL.grey;
+        if (quiet) c = sel ? COL.grey : COL.dim;
+        else if (hit) c = COL.white;
+        else c = sel ? typeColor(s, t) : typeDim(s, t);
+        if (st.fzOn && !(((st.fzMask | 0) >> t) & 1) && !sel && !quiet && !hit) c = COL.dim;
         if (((st.mutePend | 0) >> t) & 1) c = COL.red;
         if (st.copySrc === t) c = COL.green;
         out[trackPadNote(t)] = c;
@@ -509,6 +516,7 @@ export function ledFrame(st) {
             const on = (hits >> BigInt(idx)) & 1n;
             c = on ? typeColor(s, st.focus) : COL.dim;
             if (s.r && idx === cur) c = on ? COL.white : COL.lightGrey;
+            if (st.fzOn) c = idx < (st.fzLen | 0) ? COL.brightBlue : COL.dim;   /* freeze length */
         }
         out[STEP_BASE + i] = c;
     }
@@ -549,7 +557,21 @@ export function footerFor(st) {
     if (st.warn) return [["!", st.warn]];
     if (st.toast && st.toast.until > now) return [[st.toast.tag, st.toast.text]];
     const out = [];
+    if (st.fzOn) return [["FREEZE", (st.fzLen | 0) + " ST " + ((st.fzMask & 0xFFFF) === 0xFFFF ? "ALL" : "PART")]];
     if (s.tmp) out.push(["TEMP", ""]);
+    /* Pitch keyboard: the octave on the pads and the pool notes in it. */
+    if (st.padKey === "pitch" && !st.settings && !st.layer && !(s.em | 0)) {
+        const oct = st.kbOct | 0, lo = 12 * (oct + 2);
+        const NN = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+        const here = [], po = s.po || [];
+        let up = 0, dn = 0;
+        for (const n of po) { if (n < lo) dn++; else if (n >= lo + 12) up++; else here.push(NN[n - lo]); }
+        let text = here.length ? here.join(" ") : "NO NOTES";
+        if (dn) text += " -" + dn;
+        if (up) text += " +" + up;
+        out.push(["OCT " + oct, cut(text, 15)]);
+        return out;
+    }
     if (s.em | 0) {
         const ids = []; for (let c = 0; c < 16; c++) if (((s.em | 0) >> c) & 1) ids.push(c + 1);
         out.push(["EDIT", "C" + cut(ids.join("+"), 5)]);
@@ -712,7 +734,7 @@ export function drawValueList(ctx, st) {
  * picked for editing are filled and underlined. */
 export function drawCycleStrip(ctx, st) {
     const s = st.snap || {};
-    if (st.settings || st.warn || (st.toast && st.toast.until > (st.now || 0))) return;
+    if (st.settings || st.warn || st.fzOn || st.padKey === "pitch" || (st.toast && st.toast.until > (st.now || 0))) return;
     const n = Math.max(1, Math.min(16, parseInt((st.values || {}).cycles, 10) || 1));
     const em = s.em | 0, ce = s.ce | 0, pc = s.pc | 0;
     const x0 = 128 - n * 6, y = 57;

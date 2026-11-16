@@ -153,12 +153,12 @@
 <text x="1240" y="133" font-size="19" fill="#262626" text-anchor="start" font-weight="600">Volume</text>
 <text x="1240" y="153" font-size="14" fill="#666666" text-anchor="start">Move's master volume</text>
 <polyline points="1195,163 1227,140" fill="none" stroke="#aaaaaa" stroke-width="1.4"/>
-<text x="1240" y="252" font-size="19" fill="#262626" text-anchor="start" font-weight="600">Capture</text>
+<text x="1240" y="252" font-size="19" fill="#262626" text-anchor="start" font-weight="600">Capture · Sample</text>
 <text x="1240" y="272" font-size="14" fill="#666666" text-anchor="start">Press, then tap a slot: save a pattern</text>
-<text x="1240" y="289" font-size="14" fill="#666666" text-anchor="start">With Temp on: keep the changes</text>
+<text x="1240" y="289" font-size="14" fill="#666666" text-anchor="start">Sample is Temp: hold, edit, let go to undo</text>
 <polyline points="1195,248 1227,248" fill="none" stroke="#aaaaaa" stroke-width="1.4"/>
-<text x="1240" y="315" font-size="19" fill="#262626" text-anchor="start" font-weight="600">Temp · Mute</text>
-<text x="1240" y="335" font-size="14" fill="#666666" text-anchor="start">Loop is Temp: hold, edit, let go to undo</text>
+<text x="1240" y="315" font-size="19" fill="#262626" text-anchor="start" font-weight="600">Loop · Mute</text>
+<text x="1240" y="335" font-size="14" fill="#666666" text-anchor="start">Loop: freeze. Steps set the length</text>
 <text x="1240" y="352" font-size="14" fill="#666666" text-anchor="start">Mute: hold + track pads. Twice: stays on</text>
 <polyline points="1195,311 1227,311" fill="none" stroke="#aaaaaa" stroke-width="1.4"/>
 <text x="1240" y="378" font-size="19" fill="#262626" text-anchor="start" font-weight="600">Delete · Copy</text>

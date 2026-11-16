@@ -2,7 +2,7 @@
 
 E-1 is a 16-track Euclidean performance sequencer for [Ableton Move](https://www.ableton.com/move/). It runs as an overtake tool under [Schwung](https://github.com/charlesvestal/schwung) and plays Move's own tracks, a computer over USB-C, or both.
 
-**Status: build 0.3.4.** E-1 has not yet been submitted to the Schwung catalog. Install it by hand as described below.
+**Status: build 0.3.5.** E-1 has not yet been submitted to the Schwung catalog. Install it by hand as described below.
 
 ![Move E-1 control map](docs/control-map.svg)
 
@@ -41,7 +41,8 @@ The starter set has tracks 1 to 4 (kick, snare, hat, clap, notes 36 to 39) on MI
 | Jog wheel | Turn to change page: Left, Right. Click to go home. Shift + turn sets the tempo. |
 | Left buttons | Pattern, Cycles, Random, Perform, top to bottom. Hold one to use it, press it twice to keep it up, press it once more to let it go. |
 | Mute | Hold and tap track pads. The mutes apply together when you let go. Press Mute twice to keep it on: track pads then mute at once. Shift + track pad also mutes at once. |
-| Loop | Temp. Hold it and play with the knobs and pads. Let go and everything is back as it was. Press twice to keep Temp on, once more to undo. Capture keeps the changes. |
+| Sample | Temp. Hold it, play with the knobs and pads, let go and everything is back as it was. Press twice to keep Temp on, once more to undo. Capture keeps the changes. |
+| Loop | Freeze. Hold it and the last 4 steps repeat. While it is on, tap a step to set how many steps repeat, and tap track pads to take tracks in or out. Hold track pads first to freeze only those. Press twice to keep it on, once more to stop. |
 | Copy | Hold with two track pads, two pattern pads or two cycle pads to copy the first onto the second. |
 | Delete | Hold with a track pad, pattern pad or cycle pad to clear it. Delete + touch a knob clears that knob's cycle edits and random amount. Delete + step clears hand edits. |
 | Capture | Save a pattern: press Capture, then tap one of the 16 slots on the bottom pads. Capture again or Back cancels. While Temp is on, Capture keeps the Temp changes. |
@@ -121,11 +122,11 @@ Knobs 6 to 8 on Settings, and the Shift functions of knobs 1 to 3, act on the se
 
 | Light | Means |
 |---|---|
-| Track pads | The selected track is orange (note track) or cyan (CC track). Other tracks are grey, muted tracks are dark. A track flashes white when it sounds. |
+| Track pads | The selected track is bright orange (note track) or cyan (CC track). Other tracks that are on show the same colour, dim. Muted tracks are dark, or grey when selected. A track flashes white when it sounds. |
 | Step row | Pulses in the track's colour, the playhead in white. |
 | White | The current value, the playing cycle or pattern. |
 | Orange | Amounts and the notes in the pool. |
-| Grey | A choice you can make, not chosen now. |
+| Grey | A choice you can make, not chosen now. Keys on the Pitch keyboard. |
 | Blue | Triplets, black keys, scales, patterns with content. |
 | Green | Bars for Length and Quant. Dark green: styles, grooves, phrases. A green track pad is the copy source. |
 | Pink | Modifier pads at the right end of each row: octave, direction, phrase rate, swing grid, Choke or Tail. |

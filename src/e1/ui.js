@@ -62,7 +62,7 @@ const st = {
     focus: 0, pageName: "Left", settings: false, stepPage: 0, touched: -1,
     padKey: "steps", padPage: 0, kbOct: 3, selKnob: 0, listKey: null, listUntil: 0,
     shift: false, muteHeld: false, mutePend: 0, copyHeld: false, delHeld: false,
-    randomHeld: false, tempHeld: false, tempLock: false, keepTemp: false, muteLock: false, saveMode: false,
+    randomHeld: false, tempHeld: false, tempLock: false, keepTemp: false, fzOn: false, fzLock: false, fzLen: 4, fzMask: 0xFFFF, muteLock: false, saveMode: false,
     layer: null, layerHeld: null, layerLock: null,
     held: new Set(), snap: null, values: {}, warn: null, now: 0,
     flashUntil: new Array(16).fill(0), toast: null,
@@ -378,6 +378,7 @@ function releaseAllPerform() {
     for (let i = 0; i < 16; i++) { st.perfHeld[i] = false; st.latched[i] = false; }
     perf("clear", 0xFFFF, 0);
     st.soloMask = 0;
+    st.fzOn = st.fzLock = false;
     dirty = true;
 }
 
@@ -529,6 +530,7 @@ function onStep(idx, on) {
     if (!on) return;
     const steps = (st.snap && st.snap.sn) || parseInt(st.values.steps, 10) || 16;
     const f = "t" + (st.focus + 1) + ":";
+    if (st.fzOn) { st.fzLen = idx + 1; freezeApply(); freezeSay(); return; }
     if (st.shift) { setTrack("steps", idx + 1); toast("STEPS", (idx + 1) + " " + who()); return; }
     if (st.delHeld) { checkpoint(); setP(f + "clearedits", "1"); toast("CLEAR", "HAND EDITS"); edited(); return; }
     if (idx < steps) { checkpoint(); setP(f + "toggle", idx); edited(); }
@@ -542,6 +544,11 @@ function onTrackPad(t, on) {
         return;
     }
     if (st.delHeld) { clearTrack(t); return; }
+    if (st.fzOn && !st.muteHeld && !st.muteLock && !st.shift) {
+        st.fzMask = (st.fzMask ^ (1 << t)) & 0xFFFF;
+        freezeApply(); freezeSay();
+        return;
+    }
     if (st.muteHeld && !st.muteLock && !st.shift) { st.mutePend ^= 1 << t; dirty = true; return; }   /* applied on release */
     if (st.muteHeld || st.muteLock || st.shift) { toggleMute(t); return; }
     if (st.held.size === 0) setFocus(t);
@@ -649,6 +656,27 @@ function onMute(down) {
     dirty = true;
 }
 
+/* Loop freezes the last steps and repeats them. It takes the held tracks,
+ * or all of them. While it is on, the step row sets how many steps repeat
+ * and track pads take tracks in and out. Press twice to keep it on. */
+function freezeApply() { perf("freeze", 0xFFFF, 0); if (st.fzOn && st.fzMask) perf("freeze", st.fzMask, st.fzLen); }
+function freezeOff() { st.fzOn = false; st.fzLock = false; perf("freeze", 0xFFFF, 0); dirty = true; }
+function freezeSay() {
+    const m = st.fzMask & 0xFFFF;
+    let n = 0, one = -1; for (let t = 0; t < 16; t++) if ((m >> t) & 1) { n++; one = t; }
+    toast("FREEZE", st.fzLen + " ST " + (m === 0xFFFF ? "ALL" : n === 1 ? tname(one) : n + " TRACKS") + (st.fzLock ? " KEPT" : ""));
+}
+function onFreeze(down) {
+    if (down) {
+        if (st.fzLock) { freezeOff(); lastPress.freeze = -1e9; toast("FREEZE", "OFF"); return; }
+        let m = 0; for (const t of st.held) m |= 1 << t;
+        st.fzMask = m || 0xFFFF;
+        st.fzOn = true; st.fzLock = doubleTap("freeze");
+        freezeApply(); freezeSay();
+    } else if (st.fzOn && !st.fzLock) freezeOff();
+    dirty = true;
+}
+
 /* Temp: changes made while it is held are undone on release. Press twice to
  * keep Temp on, once more to undo. Capture keeps the changes. */
 function onTemp(down) {
@@ -672,6 +700,7 @@ function onTemp(down) {
  * while E-1 keeps playing. Shift+Back is the host's and quits E-1. */
 function stepBack() {
     if (st.saveMode) { st.saveMode = false; return true; }
+    if (st.fzLock) { freezeOff(); toast("FREEZE", "OFF"); return true; }
     if (st.settings) { st.settings = false; reselect(); return true; }
     if (st.muteLock) { st.muteLock = false; return true; }
     if (st.snap && (st.snap.em | 0)) { setP("t" + (st.focus + 1) + ":edit", "0"); toast("CYCLES", "ALL"); return true; }
@@ -708,7 +737,8 @@ function onCC(cc, v) {
     if (menu && menu.isOpen() && onMenuInput(cc, v)) { dirty = true; return; }
     if (cc === CC.shift) { st.shift = down; knobAcc.fill(0); dirty = true; return; }
     if (cc === CC.mute) { onMute(down); return; }
-    if (cc === CC.loop) { onTemp(down); return; }
+    if (cc === CC.sample) { onTemp(down); return; }
+    if (cc === CC.loop) { onFreeze(down); return; }
     if (cc === CC.copy) { st.copyHeld = down; if (!down) { st.copySrc = -1; st.copyPat = -1; st.copyCyc = -1; } dirty = true; return; }
     if (cc >= CC.knob0 && cc < CC.knob0 + 8) { turnKnob(cc - CC.knob0, decodeDelta(v)); return; }
     if (cc === CC.jogTurn) {
@@ -874,11 +904,11 @@ function buttonFrame() {
     /* A left button shows its layer's colour, and white while its layer is up. */
     const lay = (name) => (st.layer === name ? COL.white : LAYER_COL[name]);
     b[CC.play] = s.r ? COL.green : COL.grey;
-    b[CC.sample] = COL.off;
+    b[CC.sample] = s.tmp ? COL.yellow : COL.dim;
     b[CC.menu] = w((menu && menu.isOpen()) || st.settings);
     b[CC.shift] = w(st.shift);
     b[CC.mute] = w(st.muteHeld || st.muteLock);
-    b[CC.loop] = w(s.tmp);
+    b[CC.loop] = w(st.fzOn);
     b[CC.capture] = w(st.saveMode);
     b[CC.undo] = undo.length ? BTN.dim : BTN.off;
     b[CC.copy] = w(st.copyHeld);
@@ -1036,6 +1066,7 @@ globalThis.onResume = function () {
     st.copySrc = st.copyPat = st.copyCyc = -1;
     st.touched = -1;
     st.layerHeld = null;
+    if (st.fzOn && !st.fzLock) freezeOff();
     backDownAt = 0;
     cycPadsDown.clear();
     for (const i in audNotes) setP("aud:" + audNotes[i].t, audNotes[i].n + " 0");

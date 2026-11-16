@@ -43,12 +43,13 @@
       "title": "Lights",
       "lines": [
         "Selected track:",
-        " orange, or cyan",
-        " for a CC track.",
-        "Other tracks: grey.",
+        " bright orange, or",
+        " cyan for CC.",
+        "Other tracks on:",
+        " same colour, dim.",
         "Muted: dark.",
-        "White: current.",
-        "Orange: amounts.",
+        "White: sounding,",
+        " current value.",
         "Blue: triplets,",
         " patterns.",
         "Green: bars,",
@@ -147,7 +148,7 @@
     {
       "title": "Temp",
       "lines": [
-        "Temp is Loop.",
+        "Temp is Sample.",
         "Hold it and edit.",
         "Let go: undone.",
         "Press twice: stays",
@@ -155,6 +156,22 @@
         " undone.",
         "Capture: keep the",
         " changes."
+      ]
+    },
+    {
+      "title": "Freeze",
+      "lines": [
+        "Freeze is Loop.",
+        "Hold: the last 4",
+        " steps repeat.",
+        "Step row: how many",
+        " steps repeat.",
+        "Track pads: tracks",
+        " in or out.",
+        "Hold tracks first:",
+        " only those.",
+        "Press twice: stays",
+        " on. Once more: off."
       ]
     },
     {
