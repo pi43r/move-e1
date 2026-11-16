@@ -2,7 +2,7 @@
 
 ## Hardware tests
 
-Run these on a Move with build 0.3.7. Tick each one that works.
+Run these on a Move with build 0.3.8. Tick each one that works.
 
 **Loading and switching**
 - [ ] E-1 opens from Tools after installing over a running Schwung.
@@ -42,7 +42,7 @@ Run these on a Move with build 0.3.7. Tick each one that works.
 - [ ] Menu: Save, Save as, Load, Rename, Settings all work. Delete + click in Load deletes a set.
 
 **Web page**
-- [ ] With E-1 open, move.local shows E-1 in the Tool tab.
+- [ ] With E-1 open, http://move.local:7700/remote-ui#tool shows the E-1 page.
 - [ ] Track name, type, channel, output and mute changes reach the Move and stay after a restart.
 - [ ] CC lane numbers change what a CC track sends.
 - [ ] Set and pattern names change on the Move and are kept when the set is saved.

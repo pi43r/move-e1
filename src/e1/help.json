@@ -46,8 +46,9 @@
         " bright orange, or",
         " cyan for CC.",
         "Other tracks on:",
-        " same colour, dim.",
-        "Muted: dark.",
+        " same colour, very",
+        " dim.",
+        "Muted: off.",
         "White: sounding,",
         " current value.",
         "Blue: triplets,",
@@ -55,7 +56,7 @@
         "Green: bars,",
         " styles, grooves.",
         "Pink: modifiers.",
-        "Red: cycle edited."
+        "Red: edited."
       ]
     },
     {

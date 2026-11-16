@@ -120,7 +120,7 @@ pre code { overflow-wrap: normal; }
 <body>
 <main>
   <header>
-    <div class="label">Schwung tool for Ableton Move · build 0.3.7</div>
+    <div class="label">Schwung tool for Ableton Move · build 0.3.8</div>
     <h1>Move E-1</h1>
     <p class="lead">E-1 is a 16-track Euclidean sequencer for Ableton Move. It runs under Schwung and plays Move's own tracks, a computer over USB-C, or both.</p>
   </header>
@@ -406,7 +406,7 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
       <table>
         <thead><tr><th>Light</th><th>Means</th></tr></thead>
         <tbody>
-          <tr><td>Track pads</td><td>Selected: bright orange, or cyan for a CC track. Other tracks: the same colour, dim. Muted: dark. A track flashes white when it plays.</td></tr>
+          <tr><td>Track pads</td><td>Selected: bright orange, or cyan for a CC track. Other tracks: the same colour, very dim. Muted: off, or grey when selected. A track flashes white when it plays.</td></tr>
           <tr><td>Step row</td><td>Hits in the track's colour, the playhead white. Red: a step with its own values.</td></tr>
           <tr><td>Knob LEDs</td><td>Knobs 1 to 4 grey, 5 to 8 orange, like the two rows on screen. The last one touched is brighter.</td></tr>
           <tr><td>White</td><td>The current value, the playing cycle or pattern.</td></tr>
@@ -433,7 +433,7 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
       <table>
         <thead><tr><th>Knob</th><th>Name</th><th>What it does</th><th>Shift</th></tr></thead>
         <tbody>
-          <tr><td>1</td><td>Steps</td><td>Loop length, 1 to 64 steps.</td><td>Fill: hits added by the Fill move.</td></tr>
+          <tr><td>1</td><td>Steps</td><td>Loop length, 1 to 64 steps.</td><td>Fill: how many extra hits the track gets while the Fill perform pad is held.</td></tr>
           <tr><td>2</td><td>Pulses</td><td>Number of hits.</td><td>Rotate: shifts the hits along.</td></tr>
           <tr><td>3</td><td>Cycles</td><td>How many cycles the track plays in turn, 1 to 16.</td><td></td></tr>
           <tr><td>4</td><td>Div</td><td>Step length: straight, triplet or dotted.</td><td></td></tr>
@@ -616,7 +616,7 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
 
   <section id="web">
     <h2>Web page</h2>
-    <p>With E-1 open, browse to <code>http://move.local</code> on a computer or phone on the same network and open the Tool tab. The page shows:</p>
+    <p>With E-1 open, go to <a href="http://move.local:7700/remote-ui#tool">http://move.local:7700/remote-ui#tool</a> on a computer or phone on the same network. The page shows:</p>
     <ul>
       <li>The set name and the names of the saved patterns.</li>
       <li>For each track: name, type, channel, output and mute.</li>
@@ -633,7 +633,7 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
   </section>
 
   <footer>
-    <p>Move E-1 build 0.3.7. Inspired by the Torso T-1. Runs on <a href="https://github.com/charlesvestal/schwung">Schwung</a>. <a href="https://github.com/pi43r/move-e1">Source</a>, MIT licence.</p>
+    <p>Move E-1 build 0.3.8. Inspired by the Torso T-1. Runs on <a href="https://github.com/charlesvestal/schwung">Schwung</a>. <a href="https://github.com/pi43r/move-e1">Source</a>, MIT licence.</p>
   </footer>
 </main>
 </body>

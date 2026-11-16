@@ -231,9 +231,9 @@ export function displayFor(key, raw) {
 export const COL = {
     off: 0, white: 120, grey: 123, dim: 124,
     red: 1, dimRed: 65,
-    orange: 3, dimOrange: 69, amber: 4, yellow: 8,
+    orange: 3, dimOrange: 69, darkOrange: 70, amber: 4, yellow: 8,
     green: 11, darkGreen: 85,
-    cyan: 46, dimCyan: 93,
+    cyan: 46, dimCyan: 93, darkCyan: 94,
     blue: 17, dimBlue: 97, brightBlue: 16, lightGrey: 118,
     purple: 23, pink: 26, dimPink: 115,
 };
@@ -261,6 +261,7 @@ export function slotNote(i) { return i < 8 ? 76 + i : 68 + (i - 8); }
 const isCCBit = (s, t) => (((s.ty | 0) >> t) & 1) === 1;
 const typeColor = (s, t) => (isCCBit(s, t) ? COL.cyan : COL.orange);
 const typeDim = (s, t) => (isCCBit(s, t) ? COL.dimCyan : COL.dimOrange);
+const typeDark = (s, t) => (isCCBit(s, t) ? COL.darkCyan : COL.darkOrange);
 
 /* ------------------------------------------------------- the 16 value pads */
 
@@ -492,10 +493,9 @@ export function ledFrame(st) {
         const sel = t === st.focus || (st.held && st.held.has(t));
         const quiet = muted || soloed;
         let c;
-        if (quiet) c = sel ? COL.grey : COL.dim;
+        if (quiet) c = sel ? COL.lightGrey : COL.off;
         else if (hit) c = COL.white;
-        else c = sel ? typeColor(s, t) : typeDim(s, t);
-        if (st.fzOn && !(((st.fzMask | 0) >> t) & 1) && !sel && !quiet && !hit) c = COL.dim;
+        else c = sel ? typeColor(s, t) : typeDark(s, t);
         if (((st.mutePend | 0) >> t) & 1) c = COL.red;
         if (st.copySrc === t) c = COL.green;
         out[trackPadNote(t)] = c;
