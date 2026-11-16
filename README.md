@@ -2,7 +2,7 @@
 
 E-1 is a 16-track Euclidean performance sequencer for [Ableton Move](https://www.ableton.com/move/). It runs as an overtake tool under [Schwung](https://github.com/charlesvestal/schwung) and plays Move's own tracks, a computer over USB-C, or both.
 
-**Status: build 0.3.3.** E-1 has not yet been submitted to the Schwung catalog. Install it by hand as described below.
+**Status: build 0.3.4.** E-1 has not yet been submitted to the Schwung catalog. Install it by hand as described below.
 
 ![Move E-1 control map](docs/control-map.svg)
 
