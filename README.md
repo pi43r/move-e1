@@ -4,7 +4,7 @@ E-1 is a 16-track Euclidean performance sequencer for [Ableton Move](https://www
 
 The idea and most of the vocabulary come from the [Torso T-1](https://torsoelectronics.com/pages/t-1). E-1 is an independent project and is not affiliated with or endorsed by Torso Electronics.
 
-**Status: build 0.3.1.** Build 0.3 replaces the 0.2 control surface. E-1 has not yet been submitted to the Schwung catalog. Install it by hand as described below.
+**Status: build 0.3.2.** Build 0.3 replaces the 0.2 control surface. E-1 has not yet been submitted to the Schwung catalog. Install it by hand as described below.
 
 ![Move E-1 control map](docs/control-map.svg)
 
@@ -12,7 +12,7 @@ The control map is adapted from the [Move Bitwig](https://github.com/pi43r/move-
 
 | | |
 |---|---|
-| ![Shape page](docs/screens/home-shape.png) | ![Tone page](docs/screens/tone.png) |
+| ![Left page](docs/screens/home-shape.png) | ![Right page](docs/screens/tone.png) |
 | ![Editing cycle 2](docs/screens/cycle-edit.png) | ![Pattern slots](docs/screens/patterns.png) |
 
 These screens are rendered from the real code with Schwung's own page renderer (`make preview`), so they match the display.
@@ -40,10 +40,10 @@ The starter set has tracks 1 to 4 (kick, snare, hat, clap, notes 36 to 39) on MI
 | Bottom 16 pads | Follow the last knob you touched: divisions, a keyboard for Pitch, scales, styles, values. |
 | Plus / Minus | Page the bottom pads, or move the Pitch keyboard an octave. |
 | Knobs 1 to 8 | Edit the current page. Hold Shift for each knob's second function. The LEDs under knobs 1 to 4 and 5 to 8 have two colours, matching the two rows on screen. The knob you last touched is white and has corner marks on screen. Turning a knob with named values (Div, Scale, Style and so on) shows the whole list. |
-| Jog wheel | Turn to change page. Click to go home. Shift + turn sets the tempo. |
+| Jog wheel | Turn to change page: Left, Right. Click to go home. Shift + turn sets the tempo. |
 | Left buttons | Pattern (green), Cycles (blue), Temp (yellow), Perform (pink), top to bottom. Hold for momentary, tap to latch. Temp works only while held. A button turns white while its layer is up, and the screen shows a 4 by 4 grid that mirrors the bottom pads. |
 | Mute | Hold and tap track pads. The mutes apply together when you let go. Shift + track pad mutes at once. |
-| Sample | Hold and turn a knob to set how far that knob's value wanders at random. Delete + Sample clears random amounts. |
+| Sample | The T-1's Random. Hold and turn a knob to set how far that knob's value wanders. Hold and turn the jog wheel to set the chance, with Shift the rate. Delete + Sample clears random amounts. |
 | Loop | Hold to freeze the last 4 steps. Tap a step while holding to set the freeze length. |
 | Copy | Hold with two track pads, two pattern pads or two cycle pads to copy the first onto the second. |
 | Delete | Hold with a track pad, pattern pad or cycle pad to clear it. Delete + touch a knob clears that knob's cycle edits and random amount. Delete + step clears hand edits. |
@@ -56,64 +56,87 @@ The starter set has tracks 1 to 4 (kick, snare, hat, clap, notes 36 to 39) on MI
 
 ## Knob pages
 
-Note tracks have Shape and Tone. CC tracks have Shape, CC A, CC B and Motion. The header names the page. Knobs with few values need several detents per value.
+E-1 lays its knobs out like the T-1. The T-1 has two rows of nine knobs. Move has eight, and the screen shows them as two rows of four. So E-1 has two pages, Left and Right, which are the left and the right half of the T-1 panel with every knob in the T-1's place. Shift is the T-1's Ctrl and gives the function the T-1 prints under each knob.
 
-**Shape** (all tracks)
+The T-1's ninth column is elsewhere. Tempo is Shift + jog wheel. Random is Sample + jog wheel for the chance, and Shift + Sample + jog wheel for the rate.
 
-| Knob | Name | What it does | Shift |
-|---|---|---|---|
-| 1 | Steps | Length of the loop, 1 to 64 steps | Length: bars before the track starts over, or Off |
-| 2 | Pulses | Hits spread as evenly as possible over the steps | Rotate: moves every hit along by steps |
-| 3 | Cycles | How many cycles the track plays in turn, 1 to 16 | Fill: pulses added while the Fill move is held |
-| 4 | Div | Length of one step: straight, triplet or dotted | Quant: where a queued pattern starts (1/4 to 8 bars) |
-| 5 | Repeats | Repeats after each pulse, 0 to 48 or INF | Ramp: velocity change per repeat |
-| 6 | Time | Gap between repeats | Pace: gaps grow or shrink with each repeat |
-| 7 | Vel | Velocity, 1 to 127 | Prob: chance a pulse is dropped (see below) |
-| 8 | Sustain | Note length. 50 is one full step | Delay: moves the whole track by up to half a step |
+Turn the jog wheel to change page. CC tracks add CC A and CC B after Left and Right.
 
-Prob above zero drops single notes. Below zero it drops the whole pulse with its repeats.
+```
+Left     STEPS    PULSES   CYCLES   DIV          Right    VEL      SUSTAIN  PITCH    LENGTH
+         REPEATS  TIME     VOICING  RANGE                 ACCENT   TIMING   SCALE    CHAN
+```
 
-**Tone** (note tracks)
+**Left**
 
 | Knob | Name | What it does | Shift |
 |---|---|---|---|
-| 1 | Pitch | Moves the note pool up or down in scale steps. Touch it to get the keyboard. | Harmony: moves pool notes in the scale, one note per click |
-| 2 | Voicing | Inverts the chord or adds octaves, as set by Style | Style: PolyFix, PolyRamp, PolyClimb, MonoFix, MonoRamp, MonoClimb |
-| 3 | Range | How far Phrase moves the pitch, in scale steps | Phrase: the shape of that movement (Cad1 to 4, Saw, Tri, Sine, Pulse) |
-| 4 | Scale | Chrom, Major, Minor, Penta, Hira, Iwato, Tetra, Dorian | Root: the scale's root note |
-| 5 | Accent | How much the Groove shape changes velocity | Groove: velocity shape over 16 steps |
-| 6 | Timing | Swing: moves every second step later or earlier | Grid: swing on single steps, pairs or fours |
-| 7 | Rnd | Chance that random amounts apply, 0 to 100 | Rate: how often random values change |
-| 8 | Chan | MIDI channel | Output: Global, Move, Computer or Both |
+| 1 | Steps | Length of the loop, 1 to 64 steps. | Fill: pulses added while the Fill move is held. E-1 only. |
+| 2 | Pulses | Hits, spread as evenly as possible over the steps. | Rotate: moves every hit along by steps. |
+| 3 | Cycles | How many cycles the track plays in turn, 1 to 16. Touch it to pick a cycle to edit. |  |
+| 4 | Div | Length of one step: straight, triplet or dotted. |  |
+| 5 | Repeats | Repeats after each pulse, 0 to 48, or INF until the next pulse. | Ramp: velocity change per repeat. |
+| 6 | Time | Gap between repeats, as a division. | Pace: each gap grows or shrinks. |
+| 7 | Voicing | Inverts the chord or adds octaves, as set by Style. | Style: PolyFix, PolyRamp, PolyClimb, MonoFix, MonoRamp, MonoClimb. |
+| 8 | Range | How far Phrase moves the pitch, in scale steps. | Phrase: the shape of that movement. |
+
+**Right** (note tracks)
+
+| Knob | Name | What it does | Shift |
+|---|---|---|---|
+| 1 | Vel | Velocity, 1 to 127. | Prob: above zero drops single notes, below zero drops the whole pulse with its repeats. |
+| 2 | Sustain | Note length. 50 is one full step. |  |
+| 3 | Pitch | Moves the note pool in scale steps. Touch it to get the keyboard. | Harmony: moves pool notes in the scale, one note per click. |
+| 4 | Length | Bars before the track starts over, or Off to run freely. | Quant: where a queued pattern starts, 1/4 to 8 bars. |
+| 5 | Accent | How much the Groove shape changes velocity. | Groove: velocity shape over 16 steps. |
+| 6 | Timing | Swing: moves every second step later or earlier. | Delay: moves the whole track by up to half a step. |
+| 7 | Scale | Chrom, Major, Minor, Penta, Hira, Iwato, Tetra, Dorian. | Root: the scale's root note. |
+| 8 | Chan | MIDI channel. | Output: Global, Move, Computer or Both. |
 
 Poly styles play the whole pool as a chord. Mono styles play one pool note per pulse in turn. Climb walks through the inversions pulse by pulse.
 
-**CC A, CC B** (CC tracks): knobs 1 to 8 are CC lanes 1 to 8 and 9 to 16. A lane is Off until you turn it up. Shift + knob sets the lane's CC number.
-
-**Motion** (CC tracks)
+**Right** (CC tracks)
 
 | Knob | Name | What it does | Shift |
 |---|---|---|---|
-| 1 | Send | Pulse: send on each pulse. Change: only when the value changes. Glide: slide to the value. | |
-| 2 | Slew | Glide speed | |
-| 6 | Timing | Swing, as on Tone | Grid |
-| 7 | Rnd | Chance that random amounts apply | Rate |
-| 8 | Chan | MIDI channel | Output |
+| 1 | Send | Pulse: send on each pulse. Change: only when the value changes. Glide: slide to the value. | Prob |
+| 2 | Slew | Glide speed. |  |
+| 4 | Length | As on note tracks. | Quant |
+| 6 | Timing | Swing. | Delay |
+| 8 | Chan | MIDI channel. | Output |
+
+**CC A, CC B** (CC tracks): knobs 1 to 8 are CC lanes 1 to 8 and 9 to 16. A lane is Off until you turn it up. Shift + knob sets the lane's CC number.
 
 **Settings** (Menu, then Settings)
 
 | Knob | Name | What it does | Shift |
 |---|---|---|---|
-| 1 | Dest | Where tracks play: Move, Computer or Both | |
-| 2 | Clock | Move, Internal or Computer | |
-| 3 | Tempo | Internal tempo, 20 to 300 BPM | |
-| 4 | ClkOut | Send MIDI clock to the computer when the clock is Internal | |
-| 5 | Quant | Where a queued pattern starts | |
-| 6 | Type | Note or CC track | Mute |
-| 7 | Repeat | Choke: a new pulse cuts the last one. Tail: they overlap. | Dir: Mono styles play up or down |
-| 8 | PhrRate | Phrase length: x1 is 4 bars, x2 is 2 bars, /2 is 8 bars | |
+| 1 | Dest | Where tracks play: Move, Computer or Both. | Rnd: chance that random amounts apply. |
+| 2 | Clock | Move, Internal or Computer. | Rate: how often random values change. |
+| 3 | Tempo | Internal tempo, 20 to 300 BPM. | Grid: swing on single steps, pairs or fours. |
+| 4 | ClkOut | Send MIDI clock to the computer when the clock is Internal. |  |
+| 5 | Quant | Where a queued pattern starts. |  |
+| 6 | Type | Note or CC track. | Mute |
+| 7 | Repeat | Choke: a new pulse cuts the last one. Tail: they overlap. | Dir: Mono styles play up or down. |
+| 8 | PhrRate | Phrase length: x1 is 4 bars, x2 is 2 bars, /2 is 8 bars. |  |
 
-Knobs 6 to 8 on Settings act on the selected or held tracks. Press Back, or click the jog wheel, to leave Settings.
+Knobs 6 to 8 on Settings, and the Shift functions of knobs 1 to 3, act on the selected or held tracks. Press Back, or click the jog wheel, to leave Settings.
+
+## Colours
+
+The pads follow the T-1's colour rules, so what you learn on one reads the same on the other. In the track rows, the selected track is lit in its type colour, the others are dim, muted tracks are blue grey, and every track flashes white when it sounds.
+
+| Colour | Means |
+|---|---|
+| White | The current value, the playing cycle or pattern, the playhead, white keys. |
+| Orange | Note tracks, pulses, amounts, notes in the pool. |
+| Cyan | CC tracks and their pulses. |
+| Blue grey | There but idle: muted tracks, straight divisions, cycles in use, other choices. |
+| Blue | Triplets, black keys, scales, patterns with content. Dark blue: empty patterns, steps without a pulse. |
+| Green | Bars for Length and Quant, cadences. Dark green: styles, grooves, LFO phrases. Blinking green: the copy source. |
+| Pink | Modifier pads at the right end of each row: octave, direction, phrase rate, swing grid, Choke or Tail. The active one is bright. |
+| Red | A cycle with its own edits. The Cycles button is red while you edit one cycle. |
+| Bright blue | Repeats INF. |
 
 ## Cycles
 

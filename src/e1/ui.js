@@ -28,7 +28,7 @@ import {
     openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry,
 } from "/data/UserData/schwung/shared/text_entry.mjs";
 import {
-    PERFORM, CLOCKS, DESTS, COL, STEP_BASE, GLOBAL_KEYS,
+    PERFORM, CLOCKS, DESTS, COL, BTN, STEP_BASE, GLOBAL_KEYS,
     valuesFrom, metaFor, ledFrame, pageOptions, drawLayer, LAYER_COL, currentPages, pageIndex, knobKeys,
     padModel, padMode, padPages, padToTrack, padToSlot, trackName,
     knobLeds, drawSelection, drawValueList, selectedKnob,
@@ -58,7 +58,7 @@ const GESTURE_MS = 1200;        /* edits closer than this share one undo step */
 const IDENTITY = new Set(["name", "type", "channel", "output", "mute"]);
 
 const st = {
-    focus: 0, pageName: "Shape", settings: false, stepPage: 0, touched: -1,
+    focus: 0, pageName: "Left", settings: false, stepPage: 0, touched: -1,
     padKey: "steps", padPage: 0, kbOct: 3, selKnob: 0, listKey: null, listUntil: 0,
     shift: false, muteHeld: false, mutePend: 0, copyHeld: false, delHeld: false, loopHeld: false,
     randomHeld: false, tempHeld: false, keepTemp: false,
@@ -668,6 +668,13 @@ function onCC(cc, v) {
     if (cc === CC.jogTurn) {
         const d = decodeDelta(v);
         if (!d) return;
+        if (st.randomHeld) {                     /* the T-1's Random knob: chance, and Ctrl = rate */
+            const key = st.shift ? "rate" : "random";
+            setTrack(key, rel(st.shift ? (d > 0 ? 1 : -1) : d * 2));
+            showPadsFor(key);
+            toast(st.shift ? "RND RATE" : "RANDOM", who() || tname(st.focus));
+            return;
+        }
         if (st.shift) { setP("bpm", rel(d)); edited(); toast("TEMPO", String(Math.round((st.snap ? st.snap.bpm : 120) + d))); return; }
         changePage(d > 0 ? 1 : -1);
         return;
@@ -686,7 +693,7 @@ function onCC(cc, v) {
         if (down && st.delHeld) { setTrack("clearrandom", "1"); toast("CLEAR", "RANDOM " + who()); return; }
         st.randomHeld = down;
         knobAcc.fill(0);
-        if (down) toast("RANDOM", "TURN A KNOB");
+        if (down) toast("RANDOM", "KNOB OR JOG");
         dirty = true;
         return;
     }
@@ -838,28 +845,29 @@ const host = {
 function buttonFrame() {
     const s = st.snap || {};
     const b = {};
+    const w = (on) => (on ? BTN.on : BTN.dim);    /* white-LED buttons */
     /* A left button shows its layer's colour, and white while its layer is up. */
     const lay = (name) => (st.layer === name ? COL.white : LAYER_COL[name]);
-    b[CC.play] = s.r ? COL.green : COL.dim;
-    b[CC.menu] = (menu && menu.isOpen()) || st.settings ? COL.white : COL.dim;
-    b[CC.shift] = st.shift ? COL.white : COL.dim;
-    b[CC.mute] = st.muteHeld || (s.mu | 0) ? COL.white : COL.dim;
-    b[CC.sample] = st.randomHeld ? COL.white : COL.dim;
-    b[CC.loop] = st.loopHeld ? COL.white : COL.dim;
-    b[CC.capture] = COL.dim;
-    b[CC.undo] = undo.length ? COL.dim : COL.off;
-    b[CC.copy] = st.copyHeld ? COL.white : COL.dim;
-    b[CC.del] = st.delHeld ? COL.white : COL.dim;
+    b[CC.play] = s.r ? COL.green : COL.grey;
+    b[CC.sample] = st.randomHeld ? COL.white : COL.dimPink;
+    b[CC.menu] = w((menu && menu.isOpen()) || st.settings);
+    b[CC.shift] = w(st.shift);
+    b[CC.mute] = w(st.muteHeld || (s.mu | 0));
+    b[CC.loop] = w(st.loopHeld);
+    b[CC.capture] = BTN.dim;
+    b[CC.undo] = undo.length ? BTN.dim : BTN.off;
+    b[CC.copy] = w(st.copyHeld);
+    b[CC.del] = w(st.delHeld);
+    b[CC.back] = BTN.dim;
     const pp = padPages(st.padKey);
-    b[CC.up] = st.padKey === "pitch" || st.padPage < pp - 1 ? COL.white : COL.dim;
-    b[CC.down] = st.padKey === "pitch" || st.padPage > 0 ? COL.white : COL.dim;
+    b[CC.up] = st.padKey === "pitch" || st.padPage < pp - 1 ? BTN.on : BTN.dim;
+    b[CC.down] = st.padKey === "pitch" || st.padPage > 0 ? BTN.on : BTN.dim;
     const steps = (s.sn | 0) || 16;
-    b[CC.left] = st.stepPage > 0 ? COL.white : COL.off;
-    b[CC.right] = (st.stepPage + 1) * 16 < steps ? COL.white : COL.off;
+    b[CC.left] = st.stepPage > 0 ? BTN.on : BTN.off;
+    b[CC.right] = (st.stepPage + 1) * 16 < steps ? BTN.on : BTN.off;
     b[CC.lPattern] = lay("pattern");
     b[CC.lCycles] = (s.em | 0) ? COL.red : lay("cycles");
     b[CC.lTemp] = s.tmp ? COL.white : LAYER_COL.temp;
-    b[CC.back] = COL.dim;
     b[CC.lPerform] = lay("perform");
     const kl = knobLeds(st);
     for (let i = 0; i < 8; i++) b[CC.knob0 + i] = kl[i];

@@ -23,6 +23,41 @@
       ]
     },
     {
+      "title": "Pages like the T-1",
+      "lines": [
+        "Left page, knobs:",
+        "1 Steps  2 Pulses",
+        "3 Cycles 4 Div",
+        "5 Repeat 6 Time",
+        "7 Voicing 8 Range",
+        "Right page:",
+        "1 Vel  2 Sustain",
+        "3 Pitch 4 Length",
+        "5 Accent 6 Timing",
+        "7 Scale 8 Chan",
+        "Shift = T-1 Ctrl.",
+        "Tempo: Shift+jog.",
+        "Random: Sample+jog."
+      ]
+    },
+    {
+      "title": "Colours",
+      "lines": [
+        "White: current.",
+        "Orange: note track,",
+        " pulses, amounts.",
+        "Cyan: CC track.",
+        "Blue grey: muted,",
+        " idle.",
+        "Blue: triplets,",
+        " patterns.",
+        "Green: bars,",
+        " styles, grooves.",
+        "Pink: modifiers.",
+        "Red: cycle edited."
+      ]
+    },
+    {
       "title": "Tracks",
       "lines": [
         "Tap: select.",
@@ -141,9 +176,9 @@
         "Hold Sample, turn a",
         " knob: how far its",
         " value wanders.",
-        "Tone page: Rnd is",
-        " the chance, Shift",
-        " Rate how often.",
+        "Sample+jog: chance.",
+        "Shift+Sample+jog:",
+        " rate.",
         "Delete+Sample:",
         " clear random."
       ]
