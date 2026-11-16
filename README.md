@@ -11,7 +11,7 @@ E-1 is a 16-track Euclidean sequencer for [Ableton Move](https://www.ableton.com
 | ![Left page](docs/screens/home-shape.png) | ![Right page](docs/screens/tone.png) |
 | ![Editing cycle 2](docs/screens/cycle-edit.png) | ![Menu](docs/screens/menu.png) |
 
-Build 0.3.8. Open work and hardware tests are in [TO-DO.md](TO-DO.md).
+Build 0.3.9. Open work and hardware tests are in [TO-DO.md](TO-DO.md).
 
 ## Install
 

@@ -105,6 +105,56 @@ export function normaliseSet(raw) {
     return set;
 }
 
+/* ------------------------------------------------------------- starters */
+
+/* Track dumps load on top of an empty track, so each lists only what differs.
+ * Layout as in the engine's starter: 1-8 drums on channel 1, 9-11 notes on
+ * channels 2-4, 12-16 CC on channels 5-9. */
+function starterTracks(over) {
+    const base = (t) => {
+        if (t < 8) return { channel: 1 };
+        if (t < 11) return { channel: t - 6, scale: "Minor", sustain: 40, pool: [36, "60,63,67", "72,75,79"][t - 8] };
+        return { type: "CC", channel: t - 6 };
+    };
+    return Array.from({ length: TRACKS }, (_, t) => {
+        const kv = Object.assign({ pulses: 0 }, base(t), over[t] || {});
+        return Object.keys(kv).map((k) => k + "=" + kv[k]).join("\n");
+    });
+}
+
+const STARTERS = [
+    { name: "Init", tracks: {} },
+    { name: "Drums", tracks: {
+        0: { pulses: 4 }, 1: { pulses: 2, rotate: 4 }, 2: { pulses: 8, velocity: 80 }, 3: { pulses: 3, rotate: 2 },
+        4: { pulses: 5, rotate: 1, velocity: 90 }, 5: { pulses: 3, rotate: 6 }, 6: { pulses: 2, rotate: 3 }, 7: { pulses: 7, velocity: 70 },
+    } },
+    { name: "Drums Bass Chords", tracks: {
+        0: { pulses: 4 }, 1: { pulses: 2, rotate: 4 }, 2: { pulses: 8, velocity: 80 }, 4: { pulses: 5, rotate: 1, velocity: 90 },
+        8: { pulses: 5 }, 9: { pulses: 3, division: "1/8", sustain: 60 },
+        10: { steps: 12, pulses: 7, style: "MonoRamp", voicing: 2 },
+    } },
+    { name: "Generative", tracks: {
+        0: { steps: 16, pulses: 3 }, 2: { steps: 12, pulses: 5, velocity: 75 }, 4: { steps: 9, pulses: 7, velocity: 85 }, 6: { steps: 7, pulses: 2 },
+        8: { steps: 13, pulses: 5, style: "MonoClimb", range: 5, phrase: "Tri" },
+        9: { pulses: 3, division: "1/8", sustain: 70, style: "PolyRamp", voicing: 3, harmony: 2 },
+        10: { steps: 11, pulses: 6, style: "MonoRamp", phrase: "Sine", range: 9 },
+    } },
+];
+
+export const STARTER_NAMES = STARTERS.map((s) => s.name);
+
+/* A complete set for starter i, playing pattern 1. */
+export function starterSet(i) {
+    const s = STARTERS[i];
+    if (!s) return null;
+    const tracks = starterTracks(s.tracks);
+    const set = emptySet(s.name);
+    set.globals = JSON.stringify({ g: "", live: tracks });
+    set.patterns[0] = { name: s.name === "Init" ? "" : s.name, tracks: tracks.slice() };
+    set.current = 0;
+    return set;
+}
+
 export function createLibrary({ io, dir, now } = {}) {
     const clock = typeof now === "function" ? now : () => Date.now();
     const root = String(dir || ".").replace(/\/+$/, "");
@@ -375,7 +425,7 @@ export function createMenu({ host, now } = {}) {
     const pickSet = (s, fn) => s.sets.map((e) => ({ label: cleanName(e.name), mark: e.id === s.setId, fn: () => fn(e.id) }));
     const none = (text) => [{ label: text, fn: () => pop() }];
 
-    /* Five rows, no scrolling. Everything acts on what is loaded, playing or
+    /* Short lists. Everything acts on what is loaded, playing or
      * selected. In the Load list, hold Delete and click to remove a set. */
     const LEVELS = {
         root: {
@@ -389,10 +439,25 @@ export function createMenu({ host, now } = {}) {
                     { label: "Save", fn: () => { if (s.setId == null) return saveAs(); act("set.save"); done("SAVED " + s.setName); } },
                     { label: "Save as...", fn: saveAs },
                     { label: "Load...", fn: () => push({ kind: "loadSet" }) },
+                    { label: "New...", fn: () => push({ kind: "newSet" }) },
                     { label: "Rename...", fn: () => push({ kind: "rename" }) },
                     { label: "Settings", fn: () => { act("settings.open"); close(); } },
                 ];
             },
+        },
+
+        newSet: {
+            title: () => "New set",
+            right: () => "",
+            rows: (s) => STARTER_NAMES.map((name, i) => ({ label: name, fn: () => {
+                const start = (save) => { if (save) act("set.save"); act("set.starter", { i }); done("NEW " + name); };
+                if (!s.dirty) return start(false);
+                confirm("Unsaved changes", "", null, null, { cur: 0, rows: [
+                    { label: "Save, then start new", fn: () => start(true) },
+                    { label: "Discard changes", fn: () => start(false) },
+                    { label: "Cancel", fn: () => pop() },
+                ] });
+            } })),
         },
 
         loadSet: {

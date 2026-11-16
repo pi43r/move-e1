@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /* Library storage and menu checks. Run: node tests/test_library.mjs */
 import {
+    starterSet, STARTER_NAMES,
     createLibrary, createMenu, cleanName, slugify, isSafeId, uniqueSetName, emptySet, normaliseSet, TOAST_MS,
 } from "../src/e1/e1_library.mjs";
 
@@ -255,15 +256,15 @@ const last = (h) => h.acts[h.acts.length - 1];
 }
 {
     const { m, host } = setup();
-    go(m, 3); m.click();
+    go(m, 4); m.click();
     checkEq("rename list", m.path(), ["E-1", "Rename"]);
     go(m, 0); m.click();
     checkEq("track name starts from the current one", host.asks[0].initial, "HAT");
     host.asks[0].cb("Ride");
     checkEq("rename the selected track", last(host), ["track.rename", { t: 2, name: "Ride" }]);
-    m.open(); go(m, 3); m.click(); go(m, 1); m.click(); host.asks[1].cb("Verse");
+    m.open(); go(m, 4); m.click(); go(m, 1); m.click(); host.asks[1].cb("Verse");
     checkEq("rename the playing pattern", last(host), ["pattern.rename", { i: 0, name: "Verse" }]);
-    m.open(); go(m, 3); m.click(); go(m, 2); m.click(); host.asks[2].cb("Gig");
+    m.open(); go(m, 4); m.click(); go(m, 2); m.click(); host.asks[2].cb("Gig");
     checkEq("rename the set", last(host), ["set.rename", { id: "b", name: "Gig" }]);
 }
 {
@@ -275,6 +276,18 @@ const last = (h) => h.acts[h.acts.length - 1];
     const prints = [];
     m.draw({ print: (x, y, t) => prints.push(t), fillRect() {}, textWidth: (t) => t.length * 6 });
     check("draws title and hint", prints.includes("E-1") && prints.some((p) => p.startsWith("CLICK")), prints);
+}
+
+{
+    checkEq("four starters", STARTER_NAMES, ["Init", "Drums", "Drums Bass Chords", "Generative"]);
+    for (let i = 0; i < STARTER_NAMES.length; i++) {
+        const set = starterSet(i);
+        const live = JSON.parse(set.globals).live;
+        check("starter " + i + " has 16 tracks", live.length === 16 && live.every((d) => /pulses=\d+/.test(d)));
+        check("starter " + i + " plays pattern 1", set.current === 0 && set.patterns[0].tracks.length === 16);
+    }
+    check("init is silent", JSON.parse(starterSet(0).globals).live.every((d) => d.includes("pulses=0")));
+    check("no starter 9", starterSet(9) === null);
 }
 
 console.log(pass + "/" + (pass + fail) + " library checks passed");

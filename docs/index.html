@@ -120,7 +120,7 @@ pre code { overflow-wrap: normal; }
 <body>
 <main>
   <header>
-    <div class="label">Schwung tool for Ableton Move · build 0.3.8</div>
+    <div class="label">Schwung tool for Ableton Move · build 0.3.9</div>
     <h1>Move E-1</h1>
     <p class="lead">E-1 is a 16-track Euclidean sequencer for Ableton Move. It runs under Schwung and plays Move's own tracks, a computer over USB-C, or both.</p>
   </header>
@@ -387,7 +387,7 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
           <tr><td>Left, Right</td><td>Steps 17 to 64. <kbd>Shift</kbd>: rotate the track.</td></tr>
           <tr><td>Plus, Minus</td><td>Page the bottom pads, or move the keyboard an octave.</td></tr>
           <tr><td>Play</td><td>Start and stop. <kbd>Shift</kbd> + <kbd>Play</kbd>: clock source.</td></tr>
-          <tr><td>Menu</td><td>Save, load, rename, settings. <kbd>Shift</kbd> + <kbd>Menu</kbd>: output.</td></tr>
+          <tr><td>Menu</td><td>Save, load, new set, rename, settings. <kbd>Shift</kbd> + <kbd>Menu</kbd>: output.</td></tr>
           <tr><td>Back</td><td>Step out of whatever is open. Hold: switch to Move, E-1 keeps playing. <kbd>Shift</kbd> + <kbd>Back</kbd>: quit E-1.</td></tr>
         </tbody>
       </table>
@@ -585,11 +585,12 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
       <li>Play: hold <kbd>Pattern</kbd> and tap a slot. It starts at the next Quant line. Tap again to switch at once.</li>
       <li><kbd>Copy</kbd> + two slots copies. <kbd>Delete</kbd> + slot clears.</li>
     </ul>
-    <p><kbd>Menu</kbd> has five rows. Jog to move, click to choose, <kbd>Back</kbd> to step up.</p>
+    <p><kbd>Menu</kbd> has six rows. Jog to move, click to choose, <kbd>Back</kbd> to step up.</p>
     <dl class="terms">
       <dt>Save</dt><dd>Saves the set.</dd>
       <dt>Save as</dt><dd>Saves under a new name.</dd>
       <dt>Load</dt><dd>Opens a set. <kbd>Delete</kbd> + click deletes one.</dd>
+      <dt>New</dt><dd>Starts a set from Init (all tracks empty), Drums, Drums Bass Chords or Generative.</dd>
       <dt>Rename</dt><dd>The selected track, the playing pattern or the set.</dd>
       <dt>Settings</dt><dd>The Settings page.</dd>
     </dl>
@@ -633,7 +634,7 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
   </section>
 
   <footer>
-    <p>Move E-1 build 0.3.8. Inspired by the Torso T-1. Runs on <a href="https://github.com/charlesvestal/schwung">Schwung</a>. <a href="https://github.com/pi43r/move-e1">Source</a>, MIT licence.</p>
+    <p>Move E-1 build 0.3.9. Inspired by the Torso T-1. Runs on <a href="https://github.com/charlesvestal/schwung">Schwung</a>. <a href="https://github.com/pi43r/move-e1">Source</a>, MIT licence.</p>
   </footer>
 </main>
 </body>

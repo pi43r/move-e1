@@ -33,7 +33,7 @@ import {
     padModel, padMode, padPages, padToTrack, padToSlot, trackName,
     knobLeds, drawSelection, drawValueList, selectedKnob, drawCycleStrip,
 } from "./e1_view.mjs";
-import { createLibrary, createMenu } from "./e1_library.mjs";
+import { createLibrary, createMenu, starterSet } from "./e1_library.mjs";
 
 const LIB = { PAGE_KNOBS, buildMetaIndex };
 
@@ -942,6 +942,7 @@ const host = {
             st.setId = lib.createSet(a.name, setObject());
             lib.setLast(st.setId); st.dirty = false; sessionDirty = true;
             break;
+        case "set.starter": { const s = starterSet(a.i); if (s) { if (a.i === 0) s.name = lib.uniqueName(); applySet(null, s); st.dirty = false; lib.setLast(null); } break; }
         case "set.load": { const s = lib.loadSet(a.id); if (s) { applySet(a.id, s); lib.setLast(a.id); } break; }
         case "set.rename": lib.renameSet(a.id, a.name); if (a.id === st.setId) { st.setName = a.name; sessionDirty = true; } break;
         case "set.duplicate": lib.duplicateSet(a.id); break;

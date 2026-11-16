@@ -231,8 +231,10 @@
       "title": "Menu and exit",
       "lines": [
         "Menu: Save, Save as,",
-        " Load, Rename,",
+        " Load, New, Rename,",
         " Settings.",
+        "New: Init or a",
+        " starter set.",
         "Jog: move. Click:",
         " choose. Back: up.",
         "Load list: Delete+",
