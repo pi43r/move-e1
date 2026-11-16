@@ -55,7 +55,7 @@ Run these on a Move with build 0.3.9. Tick each one that works.
 
 ## Features
 
-- [ ] Show steps with their own values while Shift is held, also when the step has no hit.
+- [x] Show steps with their own values while Shift is held, also when the step has no hit.
 - [ ] Per-step values for CC lanes.
 - [ ] Free division (Shift + Div in fine steps).
 - [ ] Track presets (removed from the menu in 0.3.3).

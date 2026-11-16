@@ -19,6 +19,7 @@ export const SCALES = ["Chrom", "Major", "Minor", "Penta", "Hira", "Iwato", "Tet
 export const ROOTS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 export const GROOVES = ["Agogo", "Congas", "Timbal", "Bongo", "Saw", "Tri", "Sine", "Pulse"];
 export const REPEATS_INF = 49;
+export const LOOPS = ["Free", "1", "2", "4", "8"];   /* Loop lock: bars after which chance and random come round */
 
 const SCALE_DEG = [
     [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], [0, 2, 4, 5, 7, 9, 11], [0, 2, 3, 5, 7, 8, 10], [0, 2, 4, 7, 9],
@@ -69,6 +70,7 @@ export const TRACK_PARAMS = [
     { key: "phraserate", name: "PhrRate", type: "enum", options: ["x1", "x2", "/2"], div: 8 },
     { key: "ccmode", name: "Send", type: "enum", options: ["Pulse", "Change", "Glide"], div: 8 },
     { key: "slew", name: "Slew", type: "int", min: 0, max: 100, div: 1 },
+    { key: "loop", name: "Loop", type: "enum", options: LOOPS, div: 8 },
 ];
 
 export const GLOBAL_PARAMS = [
@@ -115,7 +117,7 @@ export const CC_PAGES = [
 export const SETTINGS_PAGE = {
     name: "Settings",
     keys: ["dest", "clock", "bpm", "clockout", "quant", "type", "tail", "phraserate"],
-    alt: ["random", "rate", "swinggrid", null, null, "mute", "dir", null],
+    alt: ["random", "rate", "swinggrid", "loop", null, "mute", "dir", null],
 };
 
 export const DEFAULT_NAMES = ["KICK", "SNARE", "HAT", "CLAP", "PERC", "TOM", "RIM", "SHAKE",
@@ -289,7 +291,7 @@ const DIV_SLOTS = { 0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 10: 7, 11: 8, 12: 
 const COARSE = [-1, -0.5, -0.25, 0, 0.25, 0.5, 1];
 const NUDGE = [-5, -2, -1, null, 1, 2, 5];
 
-const ENUM_COL = { length: COL.green, quant: COL.green, scale: COL.blue };
+const ENUM_COL = { length: COL.green, quant: COL.green, scale: COL.blue, loop: COL.green };
 const set = (key, value, label) => ({ k: "set", key, value: String(value), label });
 
 /* What each of the 16 pads does for the current parameter.
@@ -378,6 +380,7 @@ export function padModel(st) {
             const c = DIVISIONS[idx] === cur ? COL.white : (idx < 7 ? COL.grey : (idx < 12 ? COL.blue : COL.purple));
             pads[slot] = { c, act: set(key, DIVISIONS[idx], m.name + " " + DIVISIONS[idx]) };
         }
+        if (key === "rate") pads[15] = { c: COL.pink, act: { k: "reroll" } };
         return { title, pads };
     }
 
@@ -401,6 +404,9 @@ export function padModel(st) {
         m.options.slice(0, 16).forEach((o, i) => {
             pads[i] = { c: o === cur ? COL.white : (ENUM_COL[key] || COL.grey), act: set(key, o, m.name + " " + o) };
         });
+        /* Pink at the end of the row: a random start for Length, new dice for Loop. */
+        if (key === "length") pads[15] = { c: COL.pink, act: { k: "randstart" } };
+        if (key === "loop") pads[15] = { c: COL.pink, act: { k: "reroll" } };
         return { title, pads };
     }
 
@@ -509,16 +515,22 @@ export function ledFrame(st) {
     let hits = 0n;
     try { hits = BigInt("0x" + (s.h || "0")); } catch (e) { hits = 0n; }
     const cur = s.st ? s.st[st.focus] : -1;
-    let sm = 0n, se = 0n;
-    try { sm = BigInt("0x" + (s.sm || "0")); se = BigInt("0x" + (s.se || "0")); } catch (e) { sm = se = 0n; }
+    let sm = 0n, se = 0n, rt = 0n;
+    try { sm = BigInt("0x" + (s.sm || "0")); se = BigInt("0x" + (s.se || "0")); rt = BigInt("0x" + (s.rt || "0")); } catch (e) { sm = se = rt = 0n; }
+    /* Shift shows every step that carries its own values, hit or not.
+     * Random or Delete held shows the retrigger steps. */
+    const showRt = st.randomHeld || st.delHeld;
     for (let i = 0; i < 16; i++) {
         const idx = (st.stepPage | 0) * 16 + i;
         let c = COL.off;
         if (idx < steps) {
             const on = (hits >> BigInt(idx)) & 1n;
             c = on ? typeColor(s, st.focus) : COL.dim;
-            if ((se >> BigInt(idx)) & 1n) c = COL.red;                  /* carries its own values */
+            const own = (se >> BigInt(idx)) & 1n;
+            if (own && on) c = COL.red;                                 /* carries its own values */
             if (s.r && idx === cur) c = on ? COL.white : COL.lightGrey;
+            if (own && st.shift) c = COL.red;
+            if (showRt && ((rt >> BigInt(idx)) & 1n)) c = COL.pink;
             if ((sm >> BigInt(idx)) & 1n) c = COL.white;                /* picked for step edit */
             if (st.fzOn) c = idx < (st.fzLen | 0) ? COL.brightBlue : COL.dim;   /* freeze length */
         }
@@ -562,6 +574,10 @@ export function footerFor(st) {
     if (st.toast && st.toast.until > now) return [[st.toast.tag, st.toast.text]];
     const out = [];
     if (st.fzOn) return [["FREEZE", (st.fzLen | 0) + " ST " + ((st.fzMask & 0xFFFF) === 0xFFFF ? "ALL" : "PART")]];
+    if (st.randomHeld && !st.settings) {
+        const l = (st.values || {}).loop || "Free";
+        return [["LOOP", l === "Free" ? "FREE" : l + (l === "1" ? " BAR" : " BARS")]];
+    }
     if (s.tmp) out.push(["TEMP", ""]);
     if (s.sm && s.sm !== "0") {
         const ids = []; let m = 0n;

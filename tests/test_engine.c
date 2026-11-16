@@ -1332,6 +1332,146 @@ static int probe(const char *name)
     return 0;
 }
 
+/* 0.4: audition, repeat stop, random start, retrigger steps, loop lock. */
+static uint32_t bar_sig(const cap_t *c, int bar)
+{
+    uint32_t h = 2166136261u;
+    for (int i = 0; i < c->n; i++) {
+        const ev_t *e = &c->ev[i];
+        if ((e->st & 0xF0) != 0x90 || !e->d2) continue;
+        if (e->at < bar * 384.0 || e->at >= (bar + 1) * 384.0) continue;
+        h = (h ^ e->d1) * 16777619u; h = (h ^ e->d2) * 16777619u; h = (h ^ (uint32_t)(e->at - bar * 384.0)) * 16777619u;
+    }
+    return h;
+}
+
+static void test_v04(void)
+{
+    e1_engine_t *e = eng_new(); cap_t *c = cap_new();
+    non_t o[1024]; int n;
+
+    /* audition: one hit while stopped, let go on release, CC lanes for a CC track */
+    setup(e); fresh(e, 0); S(e, 0, "pool", "60,64,67"); S(e, 0, "velocity", "90");
+    cap_clear(c);
+    e1_audition(e, 0, 1, emit, c);
+    n = ons(c, 0, o, 16);
+    CHECK(n == 3 && o[0].note == 60 && o[2].note == 67 && o[0].vel == 90 && sounding(c) == 3);
+    e1_audition(e, 0, 0, emit, c);
+    CHECK(balanced(c));
+    e1_audition(e, 0, 1, emit, c); e1_audition(e, 0, 1, emit, c);      /* a second press lets the first go */
+    CHECK(sounding(c) == 3);
+    e1_track_silence(e, 0, emit, c);
+    CHECK(balanced(c));
+    e->t[0].v[E1_P_MUTE] = 1;
+    e1_audition(e, 0, 1, emit, c); CHECK(sounding(c) == 3);            /* heard even when muted */
+    e1_audition(e, 0, 0, emit, c); CHECK(balanced(c));
+    fresh(e, 11); S(e, 11, "type", "CC"); S(e, 11, "cc1", "55"); S(e, 11, "cc3", "99");
+    cap_clear(c);
+    e1_audition(e, 11, 1, emit, c);
+    CHECK(c->n == 2 && count_cc(c, 11, e->t[11].cc_num[0], 55) == 1 && count_cc(c, 11, e->t[11].cc_num[2], 99) == 1);
+    e1_audition(e, 16, 1, emit, c); e1_audition(e, -1, 1, emit, c);
+    CHECK(c->n == 2);
+
+    /* repeat stop: an endless chain is cut, the next pulse starts a new one */
+    setup(e); fresh(e, 0); S(e, 0, "pulses", "1"); S(e, 0, "repeats", "49"); S(e, 0, "time", "1/16"); S(e, 0, "tail", "Tail");
+    cap_clear(c); e1_start(e, 0);
+    run(e, c, 0, 100, 1);
+    int a = count_ons(c, 0, 0, 1e12);
+    CHECK(a >= 4 && e->t[0].chain[0].left > 0);
+    e1_perf(e, 1, "stoprepeats", 0);
+    run(e, c, 101, 380, 1);
+    CHECK(count_ons(c, 0, 0, 1e12) == a);
+    run(e, c, 381, 500, 1);
+    CHECK(count_ons(c, 0, 0, 1e12) > a);
+    e1_stop(e, emit, c); CHECK(balanced(c));
+
+    /* random start: the track jumps by whole steps and stays on the grid */
+    setup(e); fresh(e, 0); S(e, 0, "pulses", "16");
+    cap_clear(c); e1_start(e, 0);
+    run(e, c, 0, 100, 1);
+    int moved = 0;
+    for (int k = 0; k < 8; k++) {
+        double was = e->t[0].toff;
+        e1_perf(e, 1, "randstart", 1);
+        double d = was - e->t[0].toff;
+        if (d >= 24 && fmod(d, 24.0) == 0.0 && d < 16 * 24) moved++;
+    }
+    CHECK(moved == 8);
+    run(e, c, 101, 300, 1);
+    n = ons(c, 0, o, 1024);
+    int grid = 1; for (int i = 0; i < n; i++) if (fmod(o[i].at, 24.0) != 0.0) grid = 0;
+    CHECK(grid && n >= 12 && n <= 14);
+    e1_perf(e, 1, "randstart", 0); CHECK(e->t[0].toff == 0);
+    e1_stop(e, emit, c);
+
+    /* loop lock: chance and random values come round every N bars */
+    setup(e); fresh(e, 0); S(e, 0, "pulses", "16"); S(e, 0, "prob", "-50"); S(e, 0, "r.velocity", "100");
+    S(e, 0, "pool", "60,62,64"); S(e, 0, "repeats", "1"); S(e, 0, "time", "1/32");
+    run_count(e, c, 0, 8);
+    CHECK(bar_sig(c, 0) != bar_sig(c, 1) && bar_sig(c, 1) != bar_sig(c, 2));   /* Free: every bar differs */
+    uint32_t free_sig = signature(c);
+    S(e, 0, "loop", "1");
+    run_count(e, c, 0, 8);
+    int same = 1; for (int b = 1; b < 8; b++) if (bar_sig(c, b) != bar_sig(c, 0)) same = 0;
+    CHECK(same && count_ons(c, 0, 0, 384) > 4);
+    uint32_t one = bar_sig(c, 0);
+    S(e, 0, "loop", "2");
+    run_count(e, c, 0, 8);
+    CHECK(bar_sig(c, 0) == bar_sig(c, 2) && bar_sig(c, 1) == bar_sig(c, 3) && bar_sig(c, 4) == bar_sig(c, 0) && bar_sig(c, 0) != bar_sig(c, 1));
+    S(e, 0, "loop", "8");
+    run_count(e, c, 0, 16);
+    CHECK(bar_sig(c, 0) == bar_sig(c, 8) && bar_sig(c, 7) == bar_sig(c, 15) && bar_sig(c, 0) != bar_sig(c, 4));
+    /* re-roll: a new track seed gives a new loop, and only for that track */
+    S(e, 0, "loop", "1"); S(e, 0, "rseed", "777");
+    run_count(e, c, 0, 4);
+    CHECK(bar_sig(c, 0) != one && bar_sig(c, 0) == bar_sig(c, 3));
+    CHECK(e->t[1].rseed == 0);
+    S(e, 0, "rseed", "0"); S(e, 0, "loop", "Free");
+    run_count(e, c, 0, 8);
+    CHECK(signature(c) == free_sig);                                    /* Free with no own seed: as before */
+    S(e, 0, "prob", "50"); S(e, 0, "loop", "4");                        /* per-note drops loop too */
+    run_count(e, c, 0, 8);
+    CHECK(bar_sig(c, 0) == bar_sig(c, 4) && bar_sig(c, 3) == bar_sig(c, 7));
+
+    /* retrigger step: random and phrase count from it */
+    setup(e); fresh(e, 0); S(e, 0, "steps", "12"); S(e, 0, "pulses", "12"); S(e, 0, "r.velocity", "100");
+    S(e, 0, "range", "7"); S(e, 0, "phrase", "Saw"); S(e, 0, "scale", "Major");
+    run_count(e, c, 0, 6); n = ons(c, 0, o, 1024);
+    int diff = 0; for (int i = 0; i + 12 < n; i++) if (o[i].vel != o[i + 12].vel || o[i].note != o[i + 12].note) diff = 1;
+    CHECK(n == 6 * 16 && diff);                                         /* 12 steps against the bar: passes differ */
+    S(e, 0, "retrigtoggle", "0");
+    CHECK(e->t[0].retrig == 1);
+    run_count(e, c, 0, 6); n = ons(c, 0, o, 1024);
+    diff = 0; for (int i = 0; i + 12 < n; i++) if (o[i].vel != o[i + 12].vel || o[i].note != o[i + 12].note) diff = 1;
+    CHECK(n == 6 * 16 && !diff);                                        /* every pass now the same */
+    S(e, 0, "retrigtoggle", "0"); CHECK(e->t[0].retrig == 0);
+    /* style: a mono walk starts again on the marked step */
+    setup(e); fresh(e, 0); S(e, 0, "steps", "8"); S(e, 0, "pulses", "8"); S(e, 0, "pool", "60,62,64"); S(e, 0, "style", "MonoFix");
+    S(e, 0, "retrig", "10");                                            /* step 5 */
+    run_count(e, c, 0, 1); n = ons(c, 0, o, 1024);
+    CHECK(n == 16 && o[0].note == 60 && o[1].note == 62 && o[3].note == 60 && o[4].note == 60 && o[5].note == 62 && o[8].note == 60);
+    /* groove counts from the marked step too */
+    setup(e); fresh(e, 0); S(e, 0, "pulses", "16"); S(e, 0, "accent", "100"); S(e, 0, "groove", "Agogo"); S(e, 0, "velocity", "60");
+    run_count(e, c, 0, 1); n = ons(c, 0, o, 1024);
+    int v0 = o[0].vel, v1 = o[1].vel;
+    S(e, 0, "retrig", "20");                                            /* step 6 */
+    run_count(e, c, 0, 1); n = ons(c, 0, o, 1024);
+    CHECK(o[0].vel == v0 && o[5].vel == v0 && o[6].vel == v1 && v0 != v1);
+
+    /* saved: loop, retrig and rseed round-trip; old dumps load as Free */
+    static char buf[16384];
+    setup(e); fresh(e, 0); S(e, 0, "loop", "4"); S(e, 0, "retrig", "81"); S(e, 0, "rseed", "4242");
+    e1_dump_track(e, 0, buf, sizeof buf);
+    CHECK(strstr(buf, "loop=4\n") && strstr(buf, "retrig=81\n") && strstr(buf, "rseed=4242\n"));
+    e1_load_track(e, 1, buf);
+    CHECK(e->t[1].v[E1_P_LOOP] == 3 && e->t[1].retrig == 0x81 && e->t[1].rseed == 4242);
+    e1_load_track(e, 1, "steps=8\nfuturekey=9\n");
+    CHECK(e->t[1].v[E1_P_LOOP] == 0 && e->t[1].retrig == 0 && e->t[1].rseed == 0 && e->t[1].v[E1_P_STEPS] == 8);
+    fresh(e, 2); e1_dump_track(e, 2, buf, sizeof buf);
+    CHECK(strstr(buf, "loop=Free\n") && !strstr(buf, "retrig=") && !strstr(buf, "rseed="));
+    free(e); free(c);
+}
+
 static void run_probe(const char *name, const char *why)
 {
     fflush(stdout);
@@ -1376,6 +1516,7 @@ int main(int argc, char **argv)
     test_save();
     test_keys();
     test_fuzz();
+    test_v04();
 
     /* BUG: parse_value computes cur + atoi(val + 1) in int: signed overflow. */
     run_probe("dplus", "\"d+2147483647\" overflows int in parse_value");

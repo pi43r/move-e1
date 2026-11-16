@@ -56,7 +56,7 @@ enum {
     E1_P_VOICING, E1_P_STYLE, E1_P_RANGE, E1_P_PHRASE, E1_P_SCALE, E1_P_ROOT,
     E1_P_ACCENT, E1_P_GROOVE, E1_P_TIMING, E1_P_SWINGGRID, E1_P_RANDOM, E1_P_RATE,
     E1_P_CHANNEL, E1_P_OUTPUT, E1_P_MUTE, E1_P_DIR, E1_P_TAIL, E1_P_PHRASERATE,
-    E1_P_CCMODE, E1_P_SLEW,
+    E1_P_CCMODE, E1_P_SLEW, E1_P_LOOP,
     E1_NP
 };
 
@@ -65,6 +65,8 @@ extern const char *const e1_division_names[E1_DIVISIONS];
 extern const int e1_division_ticks[E1_DIVISIONS];
 #define E1_LENGTHS 10
 extern const int e1_length_bars[E1_LENGTHS];   /* 0 = off (free-running) */
+#define E1_LOOPS 5
+extern const int e1_loop_bars[E1_LOOPS];       /* Loop lock: 0 = free, else bars */
 
 typedef struct { uint8_t on, note, ch, ports; double off; } e1_voice_t;
 
@@ -92,6 +94,8 @@ typedef struct {
     int16_t  sed[E1_SEDITS][E1_NP];            /* per-step offsets */
     uint64_t add_mask, del_mask;               /* hand edits, all cycles */
     uint64_t cadd[E1_CYCLES], cdel[E1_CYCLES]; /* hand edits in one cycle */
+    uint64_t retrig;                           /* steps that restart random, groove, phrase and style */
+    uint32_t rseed;                            /* the track's own dice; 0 = the set's seed alone */
     uint8_t  pool[E1_POOL];                    /* MIDI notes, ascending */
     uint8_t  pool_n;
     int16_t  cc_val[E1_CC_LANES];              /* -1 = lane off */
@@ -122,6 +126,8 @@ typedef struct {
     uint8_t  p_freeze;     /* 0 off, else loop the last N steps */
     int64_t  fz_anchor;    /* track time where the frozen loop restarts */
     int64_t  fz_span, fz_dt, fz_j;
+    int64_t  rt_T;         /* track time of the last retrigger step played */
+    uint8_t  aud_n, aud_ch, aud_ports, aud_note[E1_POOL];   /* notes held by an audition */
 } e1_track_t;
 
 #define E1_TRACK_STORED_BYTES offsetof(e1_track_t, cursor)
@@ -134,6 +140,7 @@ typedef struct {
     double   tick;         /* last tick advanced to */
     double   origin;       /* tick at which track time 0 fell */
     uint32_t cc_rr;
+    uint32_t nonce;        /* stirs one-off random picks */
 } e1_engine_t;
 
 /* ports (E1_PORT_* bits), status, data1, data2 */
@@ -150,12 +157,16 @@ void e1_advance(e1_engine_t *e, double tick_now, e1_emit_fn emit, void *user);
 
 void e1_all_notes_off(e1_engine_t *e, e1_emit_fn emit, void *user);
 void e1_track_silence(e1_engine_t *e, int track, e1_emit_fn emit, void *user);
+/* Play one hit of a track by hand, also while stopped. on = 1 sounds its
+ * notes (or sends a CC track's lane values), on = 0 lets the notes go. */
+void e1_audition(e1_engine_t *e, int track, int on, e1_emit_fn emit, void *user);
 
 /* Performance moves on every track whose bit is set in `mask`:
  *   "fill", "ratchet" (2..4, 0 off), "speed" (-1, 0, 1), "reverse",
  *   "freeze" (steps to loop, 0 off), "accent", "solo" (1: tracks outside
  *   the mask fall silent, 0 off), "restart", "rotate" (a saved edit),
- *   "clear" (every move off). */
+ *   "stoprepeats" (cut repeat chains in flight), "randstart" (1: jump to a
+ *   random step, 0: back in line with the bar), "clear" (every move off). */
 void e1_perf(e1_engine_t *e, uint32_t mask, const char *move, int value);
 
 /* Copy only the saved part of a track; position and sounding notes stay. */
@@ -187,6 +198,8 @@ int  e1_ports(const e1_engine_t *e, const e1_track_t *t);
  *   c<N>.add/del     hand edits in one cycle (hex)
  *   edit             hex mask of cycles to edit (0 leaves cycle edit)
  *   clearcycle       N; copycycle "A B"; clearparam <param>; clearrandom
+ *   retrig           hex mask of retrigger steps; retrigtoggle = one step
+ *   rseed            the track's own random seed (a new one re-rolls it)
  *   name
  * Returns 1 when the key was recognised. */
 int  e1_set(e1_engine_t *e, int track, const char *key, const char *val);

@@ -411,6 +411,12 @@ static void e1_set_param(void *inst, const char *key, const char *val)
         else emit(s, e1_ports(&s->e, tr), (uint8_t)(0x80 | ch), (uint8_t)note, 0);
         return;
     }
+    /* "hit:N" = "1" / "0": one hit of track N by hand, held until "0". */
+    if (strncmp(key, "hit:", 4) == 0) {
+        int n = atoi(key + 4) - 1;
+        if (n >= 0 && n < E1_TRACKS) e1_audition(&s->e, n, atoi(val) != 0, emit, s);
+        return;
+    }
     if (strcmp(key, "focus") == 0) { int f = atoi(val) - 1; if (f >= 0 && f < E1_TRACKS) s->focus = f; return; }
     if (strcmp(key, "clock") == 0) {
         for (int i = 0; i < 3; i++) if (strcmp(val, CLOCK_NAMES[i]) == 0) { set_clock(s, i); return; }
@@ -488,7 +494,7 @@ static int json_ui(e1_inst_t *s, char *buf, int len)
 {
     int pos = 0;
 #define PUT(...) do { if (pos < len) { int _n = snprintf(buf + pos, (size_t)(len - pos), __VA_ARGS__); if (_n > 0) pos += _n; } } while (0)
-    uint32_t flash = 0, mute = 0, type = 0, pf = 0;
+    uint32_t flash = 0, mute = 0, type = 0, pf = 0, rp = 0;
     for (int i = 0; i < E1_TRACKS; i++) {
         e1_track_t *t = &s->e.t[i];
         if (t->flash) { flash |= 1u << i; t->flash = 0; }
@@ -496,6 +502,7 @@ static int json_ui(e1_inst_t *s, char *buf, int len)
         if (t->v[E1_P_TYPE] == E1_TYPE_CC) type |= 1u << i;
         if (t->p_fill || t->p_ratchet || t->p_speed || t->p_reverse || t->p_freeze || t->p_accent) pf |= 1u << i;
         if (t->p_solo_mute) pf |= 1u << (16 + i);
+        for (int k = 0; k < E1_CHAINS; k++) if (t->chain[k].left > 0) rp |= 1u << i;
     }
     const e1_track_t *f = &s->e.t[s->focus];
     int dc = e1_display_cycle(f);
@@ -503,6 +510,7 @@ static int json_ui(e1_inst_t *s, char *buf, int len)
         s->e.running, s->clock, (double)s->bpm, s->e.dest, s->clock_out, s->quant, s->focus + 1,
         (unsigned)flash, (unsigned)mute, (unsigned)type, (unsigned)(s->q_move.dropped + s->q_comp.dropped));
     PUT("\"pf\":%u,\"tmp\":%d,\"q\":%d,\"wq\":%d,\"wr\":%u,", (unsigned)pf, s->temp_on, s->commit, s->wq_n, (unsigned)s->web_rev);
+    PUT("\"rp\":%u,\"rt\":\"%llx\",", (unsigned)rp, (unsigned long long)f->retrig);
     PUT("\"cy\":%d,\"pc\":%d,\"ce\":%u,\"em\":%u,\"sn\":%d,", dc, f->cur_cycle, (unsigned)e1_cycles_edited(f),
         (unsigned)f->edit_mask, e1_steps(&s->e, s->focus, f->edit_mask ? dc : -1));
     PUT("\"st\":[");

@@ -372,7 +372,7 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
       <table>
         <thead><tr><th>Control</th><th>What it does</th></tr></thead>
         <tbody>
-          <tr><td>Top 16 pads</td><td>Tracks 1 to 16. Tap to select. Hold several and your edits apply to all of them.</td></tr>
+          <tr><td>Top 16 pads</td><td>Tracks 1 to 16. Tap to select. Tap the selected track to hear one hit of it. Hold several and your edits apply to all of them.</td></tr>
           <tr><td>Step row</td><td>The selected track's hits. Tap to toggle a step. <kbd>Shift</kbd> + step edits that step alone.</td></tr>
           <tr><td>Bottom 16 pads</td><td>The values of the last knob you touched, or the layer of a held left button.</td></tr>
           <tr><td>Knobs 1 to 8</td><td>The current page. <kbd>Shift</kbd> gives each knob's second function.</td></tr>
@@ -383,7 +383,7 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
           <tr><td>Loop</td><td>Freeze: repeat the last steps.</td></tr>
           <tr><td>Capture</td><td>Save a pattern: press, then tap a slot.</td></tr>
           <tr><td>Copy, Delete</td><td>Hold with pads to copy or clear tracks, patterns, cycles and steps.</td></tr>
-          <tr><td>Undo</td><td>Step back.</td></tr>
+          <tr><td>Undo</td><td>Step back. <kbd>Shift</kbd> + <kbd>Undo</kbd>: redo.</td></tr>
           <tr><td>Left, Right</td><td>Steps 17 to 64. <kbd>Shift</kbd>: rotate the track.</td></tr>
           <tr><td>Plus, Minus</td><td>Page the bottom pads, or move the keyboard an octave.</td></tr>
           <tr><td>Play</td><td>Start and stop. <kbd>Shift</kbd> + <kbd>Play</kbd>: clock source.</td></tr>
@@ -407,7 +407,7 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
         <thead><tr><th>Light</th><th>Means</th></tr></thead>
         <tbody>
           <tr><td>Track pads</td><td>Selected: bright orange, or cyan for a CC track. Other tracks: the same colour, very dim. Muted: off, or grey when selected. A track flashes white when it plays.</td></tr>
-          <tr><td>Step row</td><td>Hits in the track's colour, the playhead white. Red: a step with its own values.</td></tr>
+          <tr><td>Step row</td><td>Hits in the track's colour, the playhead white. Red: a hit with its own values. Hold <kbd>Shift</kbd> to see every step with its own values. Pink while <kbd>Random</kbd> or <kbd>Delete</kbd> is held: a retrigger step.</td></tr>
           <tr><td>Knob LEDs</td><td>Knobs 1 to 4 grey, 5 to 8 orange, like the two rows on screen. The last one touched is brighter.</td></tr>
           <tr><td>White</td><td>The current value, the playing cycle or pattern.</td></tr>
           <tr><td>Orange</td><td>Amounts, notes in the pool.</td></tr>
@@ -471,7 +471,7 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
           <tr><td>1</td><td>Dest</td><td>Where tracks play: Move, Computer or Both.</td><td>Rnd: chance that random amounts apply.</td></tr>
           <tr><td>2</td><td>Clock</td><td>Move, Internal or Computer.</td><td>Rate: how often random values change.</td></tr>
           <tr><td>3</td><td>Tempo</td><td>Internal tempo, 20 to 300 BPM.</td><td>Grid: swing on single steps, pairs or fours.</td></tr>
-          <tr><td>4</td><td>ClkOut</td><td>Send MIDI clock to the computer.</td><td></td></tr>
+          <tr><td>4</td><td>ClkOut</td><td>Send MIDI clock to the computer.</td><td>Loop: Free, or 1, 2, 4 or 8 bars after which chance and random values repeat.</td></tr>
           <tr><td>5</td><td>Quant</td><td>When a queued pattern starts.</td><td></td></tr>
           <tr><td>6</td><td>Type</td><td>Note or CC track.</td><td>Mute</td></tr>
           <tr><td>7</td><td>Repeat</td><td>Choke: a new hit cuts the last one. Tail: they overlap.</td><td>Dir: Mono styles play up or down.</td></tr>
@@ -493,7 +493,9 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
           <tr><td>Pitch</td><td>A one-octave keyboard, black keys above. Tap a key to add it to the pool or take it out. <kbd>Shift</kbd> + key only plays it. The end pads change octave and light up when the pool has notes that way. The footer shows the octave and the pool notes in it. Up to 8 notes.</td></tr>
           <tr><td>Root</td><td>The same keyboard. Tap the root.</td></tr>
           <tr><td>Style, Phrase, Groove</td><td>One pad per shape. The end pads set Dir or PhrRate.</td></tr>
-          <tr><td>Repeats</td><td>14 counts per page. Upper right: Choke or Tail. Lower right: INF.</td></tr>
+          <tr><td>Repeats</td><td>14 counts per page. Upper right: Choke or Tail. Lower right: INF. <kbd>Delete</kbd> lights up while repeats run. Press it to stop them. The next hit starts new ones.</td></tr>
+          <tr><td>Length</td><td>One pad per length. Lower right, pink: jump to a random start point. A tap on <kbd>Delete</kbd> does the same. <kbd>Shift</kbd> + the pink pad puts the track back in line with the bar.</td></tr>
+          <tr><td>Rate, Loop</td><td>One pad per value. Lower right, pink: new dice for the track.</td></tr>
           <tr><td>Signed values</td><td>Lower row jumps to minimum, half, quarter, zero, quarter, half, maximum. Upper row nudges by 5, 2 and 1.</td></tr>
           <tr><td>Other values</td><td>A bar up to the value, or one pad per option.</td></tr>
         </tbody>
@@ -504,6 +506,7 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
   <section id="tracks">
     <h2>Tracks and mutes</h2>
     <ul>
+      <li>Tap the selected track's pad to hear one hit of it: its notes at its velocity, or a CC track's lane values. It sounds while you hold the pad, also when the transport is stopped or the track is muted.</li>
       <li>Hold <kbd>Mute</kbd> and tap track pads. The pads turn red and the mutes apply together when you let go.</li>
       <li>Press <kbd>Mute</kbd> twice to keep it on. Track pads then mute at once. Press it again to leave.</li>
       <li><kbd>Copy</kbd> + two track pads copies the first track onto the second. Name, type, channel, output and mute stay.</li>
@@ -542,7 +545,9 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
       <li>Turn knobs or tap value pads. Only those steps change.</li>
       <li>Press <kbd>Back</kbd>.</li>
     </ol>
-    <p>Steps, Pulses, Div, Length and Timing stay per track. Edited steps show red. <kbd>Delete</kbd> + a red step clears it. A track holds up to 16 edited steps.</p>
+    <p>Steps, Pulses, Div, Length and Timing stay per track. Edited hits show red. An edited step without a hit looks like any empty step. Hold <kbd>Shift</kbd> to see all edited steps in red. <kbd>Delete</kbd> + a red step clears it. A track holds up to 16 edited steps.</p>
+    <h3>Retrigger steps</h3>
+    <p>Hold <kbd>Random</kbd> and tap a step to mark it. Each time the track reaches a marked step, its random values, groove, phrase and style start again from there, so they line up with the pattern. Marked steps show pink while <kbd>Random</kbd> or <kbd>Delete</kbd> is held. Hold <kbd>Random</kbd> and tap the step again to remove the mark.</p>
   </section>
 
   <section id="random">
@@ -555,6 +560,13 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
       <li><kbd>Random</kbd> + jog wheel sets the chance that the amounts apply. Add <kbd>Shift</kbd> for the rate.</li>
       <li>The variation repeats each time round. The New dice perform pad picks a fresh one.</li>
       <li><kbd>Delete</kbd> + <kbd>Random</kbd> clears the selected tracks' amounts.</li>
+    </ul>
+    <h3>Loop</h3>
+    <p>Loop makes a track's chance and random values repeat. Hold <kbd>Random</kbd> and press Plus or Minus to choose Free, 1, 2, 4 or 8 bars. The footer shows the setting while <kbd>Random</kbd> is held. With Free, Prob and the random amounts that follow Rate give new results all the time. With a loop, the same results come round every 1, 2, 4 or 8 bars.</p>
+    <ul>
+      <li><kbd>Random</kbd> + jog click rolls new dice for the track. The screen says REROLL. With a loop set, the new results repeat from then on.</li>
+      <li>The pink pad at the lower right of the Loop and Rate pads rolls new dice too.</li>
+      <li>Loop is also on the Settings page: <kbd>Shift</kbd> + knob 4.</li>
     </ul>
   </section>
 
@@ -570,7 +582,7 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
     <h3>Freeze</h3>
     <p>Hold <kbd>Loop</kbd> and the last 4 steps repeat. While it is on, tap a step to set how many steps repeat, and tap track pads to take tracks in or out. Hold track pads before pressing <kbd>Loop</kbd> to freeze only those. Press <kbd>Loop</kbd> twice to keep the freeze, once more to stop.</p>
     <h3>Temp</h3>
-    <p>Hold <kbd>Sample</kbd> and change anything. Let go and the tracks are back as they were. Press it twice to keep Temp on, once more to undo. <kbd>Capture</kbd> keeps the changes.</p>
+    <p>Hold <kbd>Sample</kbd> and change anything. Let go and the tracks are back as they were. Press it twice to keep Temp on, once more to undo. <kbd>Capture</kbd> keeps the changes. Mutes changed under Temp come back too.</p>
   </section>
 
   <section id="patterns">
@@ -629,7 +641,7 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
   <section id="saving">
     <h2>Saving and undo</h2>
     <p>E-1 keeps the live state and comes back to it next time. A set file changes only when you save it. Files are in <code>/data/UserData/schwung/e1/</code>.</p>
-    <p><kbd>Undo</kbd> steps back up to 24 times. Loading a set clears the history.</p>
+    <p><kbd>Undo</kbd> steps back up to 24 times. <kbd>Shift</kbd> + <kbd>Undo</kbd> redoes what you undid. A new edit clears the redo steps. Loading a set clears the history.</p>
     <p>E-1 ignores incoming MIDI notes.</p>
   </section>
 

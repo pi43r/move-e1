@@ -473,6 +473,13 @@ static void test_temp(void)
     CHECK(strcmp(get(inst, "t1:pulses"), "2") == 0 && !S->temp_on);
     set(inst, "temp", "0");
     CHECK(strcmp(get(inst, "t1:pulses"), "2") == 0);
+    /* mutes changed under Temp come back, kept ones stay */
+    set(inst, "t1:mute", "Off"); set(inst, "t2:mute", "On");
+    set(inst, "temp", "1");
+    set(inst, "t1:mute", "On"); set(inst, "t2:mute", "Off"); set(inst, "t3:mute", "On");
+    CHECK(S->e.t[0].v[E1_P_MUTE] == 1 && S->e.t[1].v[E1_P_MUTE] == 0);
+    set(inst, "temp", "0");
+    CHECK(S->e.t[0].v[E1_P_MUTE] == 0 && S->e.t[1].v[E1_P_MUTE] == 1 && S->e.t[2].v[E1_P_MUTE] == 0);
     api->destroy_instance(inst);
 }
 
@@ -509,6 +516,29 @@ static void test_perf_aud(void)
     set(inst, "aud:0", "60 100"); set(inst, "aud:17", "60 100"); set(inst, "aud:1", "60"); set(inst, "aud:1", "");
     render(inst, 1);
     CHECK(npk == before);
+
+    /* hit: one hit of a track by hand, while stopped; repeats and retrigger marks in the snapshot */
+    reset_log();
+    set(inst, "t9:mute", "On");
+    set(inst, "hit:9", "1"); render(inst, 1);
+    CHECK(npk == 1 && pk[0].b[1] == 0x91 && pk[0].b[2] == 36 && sounding(P_MOVE) == 1);
+    set(inst, "hit:9", "0"); render(inst, 1);
+    CHECK(npk == 2 && sounding(P_MOVE) == 0);
+    set(inst, "hit:0", "1"); set(inst, "hit:17", "1"); render(inst, 1);
+    CHECK(npk == 2);
+    set(inst, "focus", "2"); set(inst, "t2:retrigtoggle", "4");
+    n = api->get_param(inst, "ui", b, sizeof b);
+    CHECK(n > 0 && strstr(b, "\"rt\":\"10\"") && strstr(b, "\"rp\":0,"));
+    set(inst, "clock", "Internal"); only(inst, 1);
+    set(inst, "t1:repeats", "49"); set(inst, "t1:pulses", "1"); set(inst, "t1:tail", "Tail"); set(inst, "t1:rotate", "0");
+    set(inst, "play", "1"); render(inst, 40);
+    n = api->get_param(inst, "ui", b, sizeof b);
+    CHECK(n > 0 && strstr(b, "\"rp\":1,"));
+    set(inst, "perf:stoprepeats", "1 0");
+    n = api->get_param(inst, "ui", b, sizeof b);
+    CHECK(n > 0 && strstr(b, "\"rp\":0,"));
+    set(inst, "perf:randstart", "1 1"); CHECK(S->e.t[0].toff != 0);
+    set(inst, "play", "0"); render(inst, 10);
     api->destroy_instance(inst);
 }
 

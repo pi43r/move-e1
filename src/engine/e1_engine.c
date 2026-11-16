@@ -21,6 +21,7 @@ const int e1_division_ticks[E1_DIVISIONS] = {
     144, 72, 36
 };
 const int e1_length_bars[E1_LENGTHS] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 16 };
+const int e1_loop_bars[E1_LOOPS] = { 0, 1, 2, 4, 8 };
 
 static const char *const LENGTH_NAMES[] = { "Off", "1", "2", "3", "4", "5", "6", "7", "8", "16" };
 static const char *const TYPE_NAMES[]   = { "Note", "CC" };
@@ -37,6 +38,7 @@ static const char *const GRID_NAMES[]   = { "x1", "x2", "x4" };
 static const char *const DIR_NAMES[]    = { "Up", "Down" };
 static const char *const TAIL_NAMES[]   = { "Choke", "Tail" };
 static const char *const PRATE_NAMES[]  = { "x1", "x2", "/2" };
+static const char *const LOOP_NAMES[]   = { "Free", "1", "2", "4", "8" };
 
 static const int8_t SCALE_DEG[8][12] = {
     { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 },
@@ -117,6 +119,7 @@ static const pdesc_t P[E1_NP] = {
     [E1_P_PHRASERATE] = { "phraserate", 0, 2, 0,     PRATE_NAMES,  0, 0 },
     [E1_P_CCMODE]     = { "ccmode",     0, 2, 0,     CCMODE_NAMES, 0, 0 },
     [E1_P_SLEW]       = { "slew",       0, 100, 0,   NULL,         0, 0 },
+    [E1_P_LOOP]       = { "loop",       0, E1_LOOPS - 1, 0, LOOP_NAMES, 0, 0 },
 };
 
 int e1_param_count(void) { return E1_NP; }
@@ -143,6 +146,12 @@ static uint64_t mix(uint64_t x)
 int e1_chance(uint32_t seed, int track, int64_t k)
 {
     return (int)(mix(((uint64_t)seed << 32) ^ ((uint64_t)(uint32_t)track * 0x9E3779B97F4A7C15ULL) ^ (uint64_t)k) % 100ULL);
+}
+
+/* The seed a track draws from: the set's, stirred by the track's own. */
+static uint32_t tseed(const e1_engine_t *e, const e1_track_t *t)
+{
+    return e->seed + t->rseed * 0x9E3779B1u;
 }
 
 static int lowest_bit(uint32_t m) { for (int i = 0; i < 16; i++) if (m & (1u << i)) return i; return -1; }
@@ -193,7 +202,7 @@ static int eff_s(const e1_engine_t *e, int ti, int p, int c, int ridx, int step)
     if (t->rnd[p] && t->v[E1_P_RANDOM] > 0) {
         int idx = (d->flags & F_RC) ? c : ((d->flags & F_RR) ? ridx : -1);
         if (idx >= 0) {
-            uint64_t h = mix(((uint64_t)e->seed << 32) ^ ((uint64_t)(ti * 64 + p) << 16) ^ (uint64_t)idx);
+            uint64_t h = mix(((uint64_t)tseed(e, t) << 32) ^ ((uint64_t)(ti * 64 + p) << 16) ^ (uint64_t)idx);
             if ((int)(h % 100ULL) < t->v[E1_P_RANDOM]) {
                 double u = (double)((h >> 8) % 1001ULL) / 1000.0;
                 v += (int)lrint((double)t->rnd[p] / 100.0 * (double)d->span * u);
@@ -463,6 +472,7 @@ void e1_join(e1_engine_t *e, double origin, double now)
         t->toff = 0;
         t->cur_step = -1;
         t->cur_cycle = 0;
+        t->rt_T = 0;
         for (int c = 0; c < E1_CHAINS; c++) t->chain[c].left = 0;
         resync(e, t);
     }
@@ -482,11 +492,18 @@ static void voices_off(e1_track_t *t, e1_emit_fn emit, void *user)
 
 static void chains_off(e1_track_t *t) { for (int c = 0; c < E1_CHAINS; c++) t->chain[c].left = 0; }
 
+static void aud_off(e1_track_t *t, e1_emit_fn emit, void *user)
+{
+    for (int i = 0; i < t->aud_n; i++) emit(user, t->aud_ports, (uint8_t)(0x80 | (t->aud_ch & 0x0F)), t->aud_note[i], 0);
+    t->aud_n = 0;
+}
+
 void e1_track_silence(e1_engine_t *e, int track, e1_emit_fn emit, void *user)
 {
     if (track < 0 || track >= E1_TRACKS) return;
     voices_off(&e->t[track], emit, user);
     chains_off(&e->t[track]);
+    aud_off(&e->t[track], emit, user);
 }
 
 void e1_all_notes_off(e1_engine_t *e, e1_emit_fn emit, void *user)
@@ -659,6 +676,22 @@ void e1_perf(e1_engine_t *e, uint32_t mask, const char *move, int value)
             int steps = eff(e, i, E1_P_STEPS, -1, -1);
             t->v[E1_P_ROTATE] = (int16_t)(((t->v[E1_P_ROTATE] + value % steps) % steps + steps) % steps);
         }
+        else if (strcmp(move, "stoprepeats") == 0) chains_off(t);
+        else if (strcmp(move, "randstart") == 0) {
+            if (!value) { t->toff = 0; t->p_freeze = 0; resync(e, t); continue; }
+            /* Jump ahead a random number of whole steps, so the grid holds. */
+            slot_t rs;
+            double Tn = track_time(e, t, e->tick);
+            slot_at(e, i, (int64_t)floor(Tn < 0 ? 0 : Tn), &rs);
+            int64_t Lt = (int64_t)e1_length_bars[clampi(t->v[E1_P_LENGTH], 0, E1_LENGTHS - 1)] * E1_TICKS_PER_BAR;
+            int n = Lt > 0 ? (int)(Lt / rs.dur) : rs.steps;
+            if (n < 2) n = rs.steps;
+            if (n < 2) continue;
+            uint64_t h = mix(((uint64_t)e->seed << 32) ^ ((uint64_t)(++e->nonce) << 8) ^ (uint64_t)i ^ (uint64_t)(int64_t)e->tick);
+            t->toff -= (double)(1 + (int)(h % (uint64_t)(n - 1))) * (double)rs.dur / speed_f(t);
+            t->p_freeze = 0;
+            resync(e, t);
+        }
         else if (strcmp(move, "clear") == 0) {
             t->p_fill = t->p_ratchet = t->p_reverse = t->p_accent = 0;
             if (t->p_speed || t->p_freeze) { t->p_speed = 0; t->p_freeze = 0; resync(e, t); }
@@ -683,7 +716,7 @@ static int cc_eff(const e1_engine_t *e, int ti, int lane, int c, int ridx)
     if (v < 0) return -1;
     if (c >= 0 && c < E1_CYCLES) v += t->cc_cyc[c][lane];
     if (t->cc_rnd[lane] && t->v[E1_P_RANDOM] > 0 && ridx >= 0) {
-        uint64_t h = mix(((uint64_t)e->seed << 32) ^ ((uint64_t)(ti * 64 + 48 + lane) << 16) ^ (uint64_t)ridx);
+        uint64_t h = mix(((uint64_t)tseed(e, t) << 32) ^ ((uint64_t)(ti * 64 + 48 + lane) << 16) ^ (uint64_t)ridx);
         if ((int)(h % 100ULL) < t->v[E1_P_RANDOM])
             v += (int)lrint((double)t->cc_rnd[lane] / 100.0 * 127.0 * ((double)((h >> 8) % 1001ULL) / 1000.0));
     }
@@ -702,24 +735,52 @@ static int groove_tenths(int groove, int step)
     }
 }
 
-static int random_step(const e1_track_t *t, int64_t T)
+/* The step a slot is played as, and whether it is a retrigger step. */
+static int play_step(const e1_track_t *t, const slot_t *s) { return t->p_reverse ? s->steps - 1 - s->step : s->step; }
+static int is_retrig(const e1_track_t *t, int step) { return step >= 0 && step < 64 && ((t->retrig >> step) & 1); }
+
+/* Time as the free-running parts count it: from the last retrigger step,
+ * and wrapped to the loop when Loop is set, so the same draws come round. */
+static int64_t free_time(const e1_track_t *t, const slot_t *s)
 {
-    return (int)((T / div_ticks(t->v[E1_P_RATE])) & 0x3FFFFFFF);
+    int64_t r = s->start;
+    if (t->retrig) r = is_retrig(t, play_step(t, s)) ? 0 : r - t->rt_T;
+    if (r < 0) r = -r;
+    int bars = e1_loop_bars[clampi(t->v[E1_P_LOOP], 0, E1_LOOPS - 1)];
+    if (bars) r %= (int64_t)bars * E1_TICKS_PER_BAR;
+    return r;
+}
+
+static int random_step(const e1_track_t *t, const slot_t *s)
+{
+    return (int)((free_time(t, s) / div_ticks(t->v[E1_P_RATE])) & 0x3FFFFFFF);
 }
 
 static void fire(e1_engine_t *e, int ti, const slot_t *s, double when, e1_emit_fn emit, void *user)
 {
     e1_track_t *t = &e->t[ti];
     int c = s->c;
-    int step = t->p_reverse ? s->steps - 1 - s->step : s->step;
+    int step = play_step(t, s);
     t->cur_step = step;
     t->cur_cycle = c;
+    if (t->retrig && is_retrig(t, step)) t->rt_T = s->start;
     if (!hit(e, ti, c, step, t->p_fill)) return;
 
-    int ridx = random_step(t, s->start);
-    int64_t id = (int64_t)((uint64_t)s->start * 2654435761ULL + (uint64_t)ti);
+    /* The nearest retrigger step at or before this one in the cycle: style
+     * and groove count from it. */
+    int rb = -1;
+    if (t->retrig) for (int i = 0; i < s->steps && i < 64; i++) {
+        int upto = t->p_reverse ? (i >= step) : (i <= step);
+        if (upto && is_retrig(t, i) && (rb < 0 || !t->p_reverse)) rb = i;
+    }
+
+    uint32_t seed = tseed(e, t);
+    int ridx = random_step(t, s);
+    /* With Loop set the chance draws come round with the loop too. */
+    int64_t idT = t->v[E1_P_LOOP] > 0 ? free_time(t, s) : s->start;
+    int64_t id = (int64_t)((uint64_t)idT * 2654435761ULL + (uint64_t)ti);
     int prob = eff_s(e, ti, E1_P_PROB, c, ridx, step);
-    if (prob < 0 && e1_chance(e->seed, ti, id) < -prob) return;   /* the whole pulse and its repeats */
+    if (prob < 0 && e1_chance(seed, ti, id) < -prob) return;   /* the whole pulse and its repeats */
     if (t->v[E1_P_MUTE] || t->p_solo_mute) return;
 
     if (t->v[E1_P_TYPE] == E1_TYPE_CC) {
@@ -740,19 +801,22 @@ static void fire(e1_engine_t *e, int ti, const slot_t *s, double when, e1_emit_f
     int pidx = 0;
     for (int i = 0; i < s->steps; i++) {
         int before = t->p_reverse ? (i > step) : (i < step);
+        if (rb >= 0 && (t->p_reverse ? (i > rb) : (i < rb))) continue;
         if (before && hit(e, ti, c, i, t->p_fill)) pidx++;
     }
 
     static const int PRATE_TICKS[3] = { 4 * E1_TICKS_PER_BAR, 2 * E1_TICKS_PER_BAR, 8 * E1_TICKS_PER_BAR };
     int ptk = PRATE_TICKS[clampi(t->v[E1_P_PHRASERATE], 0, 2)];
-    double ph = (double)(s->start % ptk) / (double)ptk;
+    int64_t pT = t->retrig ? (is_retrig(t, step) ? 0 : s->start - t->rt_T) : s->start;   /* the phrase restarts on a retrigger */
+    if (pT < 0) pT = -pT;
+    double ph = (double)(pT % ptk) / (double)ptk;
     int range = eff_s(e, ti, E1_P_RANGE, c, ridx, step);
     int shift = (int)lrint((double)range * (double)phrase_tenths(eff_s(e, ti, E1_P_PHRASE, c, ridx, step), ph) / 10.0);
 
     double sp = speed_f(t);
     int vel = eff_s(e, ti, E1_P_VELOCITY, c, ridx, step);
     int accent = eff_s(e, ti, E1_P_ACCENT, c, ridx, step);
-    if (accent) vel += accent * 6 * groove_tenths(eff_s(e, ti, E1_P_GROOVE, c, ridx, step), step) / 100;
+    if (accent) vel += accent * 6 * groove_tenths(eff_s(e, ti, E1_P_GROOVE, c, ridx, step), rb < 0 ? step : abs(step - rb)) / 100;
     if (t->p_accent) vel = 127;
     vel = clampi(vel, 1, 127);
 
@@ -777,7 +841,7 @@ static void fire(e1_engine_t *e, int ti, const slot_t *s, double when, e1_emit_f
     int n = build_notes(e, ti, c, step, pidx, shift, ridx, notes);
     int drop = prob > 0 ? prob : 0;
     for (int j = 0; j < n; j++) {
-        if (drop && e1_chance(e->seed, ti, (int64_t)((uint64_t)id * 31u + (uint64_t)j + 1u)) < drop) continue;
+        if (drop && e1_chance(seed, ti, (int64_t)((uint64_t)id * 31u + (uint64_t)j + 1u)) < drop) continue;
         note_on(e, t, notes[j], vel, when, len, emit, user);
     }
 
@@ -827,7 +891,7 @@ static void run_chains(e1_engine_t *e, int ti, double now, e1_emit_fn emit, void
                 double len = ch->len;
                 if (len > ch->interval * 0.9) len = ch->interval * 0.9;
                 for (int j = 0; j < n; j++) {
-                    if (ch->prob && e1_chance(e->seed, ti, (int64_t)ch->id * 131 + ch->k * 17 + j) < ch->prob) continue;
+                    if (ch->prob && e1_chance(tseed(e, t), ti, (int64_t)ch->id * 131 + ch->k * 17 + j) < ch->prob) continue;
                     note_on(e, t, notes[j], vel, ch->next, len, emit, user);
                 }
             }
@@ -887,7 +951,7 @@ static double slot_offset(const e1_engine_t *e, int ti, const slot_t *s)
 {
     const e1_track_t *t = &e->t[ti];
     double off = (double)s->dur * (double)t->v[E1_P_DELAY] / 100.0;
-    int timing = eff(e, ti, E1_P_TIMING, s->c, random_step(t, s->start));
+    int timing = eff(e, ti, E1_P_TIMING, s->c, random_step(t, s));
     if (timing) {
         int g = 1 << clampi(t->v[E1_P_SWINGGRID], 0, 2);
         if ((s->step / g) & 1) off += (double)s->dur * (double)g * (double)timing / 100.0;
@@ -969,6 +1033,36 @@ void e1_advance(e1_engine_t *e, double tick_now, e1_emit_fn emit, void *user)
         advance_track(e, ti, tick_now, emit, user);
         run_chains(e, ti, tick_now, emit, user);
         expire(t, tick_now, emit, user);
+    }
+}
+
+/* ------------------------------------------------------------- audition */
+
+void e1_audition(e1_engine_t *e, int track, int on, e1_emit_fn emit, void *user)
+{
+    if (track < 0 || track >= E1_TRACKS) return;
+    e1_track_t *t = &e->t[track];
+    aud_off(t, emit, user);
+    if (!on) return;
+    int c = e1_display_cycle(t);
+    int ports = e1_ports(e, t);
+    t->flash = 1;
+    if (t->v[E1_P_TYPE] == E1_TYPE_CC) {
+        for (int l = 0; l < E1_CC_LANES; l++) {
+            int v = cc_eff(e, track, l, c, -1);
+            if (v >= 0) cc_send(t, l, v, ports, emit, user);
+        }
+        return;
+    }
+    int notes[E1_POOL];
+    int n = build_notes(e, track, c, -1, 0, 0, -1, notes);
+    int vel = clampi(eff(e, track, E1_P_VELOCITY, c, -1), 1, 127);
+    uint8_t ch = (uint8_t)((t->v[E1_P_CHANNEL] - 1) & 0x0F);
+    t->aud_ch = ch; t->aud_ports = (uint8_t)ports;
+    for (int j = 0; j < n; j++) {
+        uint8_t note = (uint8_t)clampi(notes[j], 0, 127);
+        emit(user, ports, (uint8_t)(0x90 | ch), note, (uint8_t)vel);
+        t->aud_note[t->aud_n++] = note;
     }
 }
 
@@ -1113,6 +1207,14 @@ static int set_track(e1_engine_t *e, int ti, const char *key, const char *val, i
     if (strcmp(key, "toggle") == 0) { toggle_step(e, ti, atoi(val)); return 1; }
     if (strcmp(key, "addmask") == 0) { t->add_mask = strtoull(val, NULL, 16); return 1; }
     if (strcmp(key, "delmask") == 0) { t->del_mask = strtoull(val, NULL, 16); return 1; }
+    if (strcmp(key, "retrig") == 0) { t->retrig = strtoull(val, NULL, 16); return 1; }
+    if (strcmp(key, "retrigtoggle") == 0) {
+        int st = atoi(val);
+        if (st < 0 || st >= 64) return 0;
+        t->retrig ^= 1ULL << st;
+        return 1;
+    }
+    if (strcmp(key, "rseed") == 0) { t->rseed = (uint32_t)strtoul(val, NULL, 10); return 1; }
     if (strcmp(key, "clearedits") == 0) {
         if (em) { for (int c = 0; c < E1_CYCLES; c++) if (em & (1u << c)) t->cadd[c] = t->cdel[c] = 0; }
         else t->add_mask = t->del_mask = 0;
@@ -1280,6 +1382,8 @@ int e1_get(const e1_engine_t *e, int track, const char *key, char *buf, int len)
     }
     if ((lane = parse_lane(key, "ccn")) >= 0) return snprintf(buf, (size_t)len, "%d", t->cc_num[lane]);
     if (strcmp(key, "name") == 0) return snprintf(buf, (size_t)len, "%s", t->name);
+    if (strcmp(key, "retrig") == 0) return snprintf(buf, (size_t)len, "%llx", (unsigned long long)t->retrig);
+    if (strcmp(key, "rseed") == 0) return snprintf(buf, (size_t)len, "%u", (unsigned)t->rseed);
     if (strcmp(key, "pool") == 0) {
         int pos = 0;
         buf[0] = 0;
@@ -1326,6 +1430,8 @@ int e1_dump_track(const e1_engine_t *e, int track, char *buf, int len)
     pos = appendf(buf, len, pos, "\n");
     if (t->add_mask) pos = appendf(buf, len, pos, "addmask=%llx\n", (unsigned long long)t->add_mask);
     if (t->del_mask) pos = appendf(buf, len, pos, "delmask=%llx\n", (unsigned long long)t->del_mask);
+    if (t->retrig) pos = appendf(buf, len, pos, "retrig=%llx\n", (unsigned long long)t->retrig);
+    if (t->rseed) pos = appendf(buf, len, pos, "rseed=%u\n", (unsigned)t->rseed);
     for (int l = 0; l < E1_CC_LANES; l++) {
         pos = appendf(buf, len, pos, "ccn%d=%d\n", l + 1, t->cc_num[l]);
         if (t->cc_val[l] >= 0) pos = appendf(buf, len, pos, "cc%d=%d\n", l + 1, t->cc_val[l]);

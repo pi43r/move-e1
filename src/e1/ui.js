@@ -7,6 +7,7 @@
  *
  * The surface has one home and no pad pages:
  *   Top 16 pads      tracks. Tap = select, hold = aim knobs and moves at it.
+ *                    Tap the selected one = hear one hit of it.
  *   Step row         the selected track's pulses, for the cycle shown.
  *   Bottom 16 pads   whatever the knob under your finger needs: divisions,
  *                    a keyboard for Pitch, cycles for Cycles, styles...
@@ -79,7 +80,9 @@ let editsSinceSave = 0, idleTicks = 0, saveQueue = [], saveParts = [];
 let sessionDirty = false;
 let ledHave = {};
 let knobAcc = [0, 0, 0, 0, 0, 0, 0, 0];
-let undo = [], lastEditAt = -1e9;
+let undo = [], redo = [], lastEditAt = -1e9;
+let audTracks = new Set();      /* tracks sounding a hand-played hit */
+let delDownAt = 0, delUsed = false;
 let toastShown = false, listShown = false;
 let layerPressAt = 0, layerPadUsed = false, layerSkipLock = false;
 let audNotes = {};              /* pad slot -> note being auditioned */
@@ -216,6 +219,7 @@ function dumpAll() {
 
 /* One undo step per gesture: the state before the first edit of a burst. */
 function checkpoint() {
+    redo = [];                                   /* a new edit ends the redo trail */
     if (st.now - lastEditAt > GESTURE_MS) {
         undo.push(dumpAll());
         if (undo.length > UNDO_DEPTH) undo.shift();
@@ -356,11 +360,59 @@ function copyTrack(src, dst) {
 function doUndo() {
     const prev = undo.pop();
     if (!prev) { toast("UNDO", "NOTHING LEFT"); return; }
+    redo.push(dumpAll());
+    if (redo.length > UNDO_DEPTH) redo.shift();
     stageAll(prev, "now");
     lastEditAt = -1e9;
     toast("UNDO", undo.length + " LEFT");
     edited();
 }
+
+function doRedo() {
+    const next = redo.pop();
+    if (!next) { toast("REDO", "NOTHING LEFT"); return; }
+    undo.push(dumpAll());
+    if (undo.length > UNDO_DEPTH) undo.shift();
+    stageAll(next, "now");
+    lastEditAt = -1e9;
+    toast("REDO", redo.length + " LEFT");
+    edited();
+}
+
+/* ------------------------------------------------------------ 0.4 moves */
+
+function aimMask() { return heldMask() || (1 << st.focus); }
+
+/* A new seed for the aimed tracks: their chances and random values change,
+ * and with Loop set the new ones come round from now on. */
+function reroll() {
+    setTrack("rseed", String(1 + Math.floor(Math.random() * 0x7FFFFFFE)));
+    toast("REROLL", who() || tname(st.focus));
+}
+
+const LOOPS = ["Free", "1", "2", "4", "8"];
+function loopSay(v) { return v === "Free" ? "FREE" : v + (v === "1" ? " BAR" : " BARS"); }
+function stepLoop(d) {
+    const cur = Math.max(0, LOOPS.indexOf(st.values.loop));
+    const next = LOOPS[Math.max(0, Math.min(LOOPS.length - 1, cur + d))];
+    setTrack("loop", next);
+    showPadsFor("loop");
+    toast("LOOP", loopSay(next) + " " + who());
+}
+
+function stopRepeats() {
+    const m = aimMask();
+    if (!st.snap || !((st.snap.rp | 0) & m)) return;
+    perf("stoprepeats", m, 0);
+    toast("REPEATS", "STOPPED " + who());
+}
+
+function randomStart(on) {
+    perf("randstart", aimMask(), on ? 1 : 0);
+    toast("START", (on ? "RANDOM " : "IN LINE ") + who());
+}
+
+function auditionOff(t) { if (audTracks.delete(t)) setP("hit:" + (t + 1), "0"); }
 
 /* ------------------------------------------------------------ perform */
 
@@ -581,6 +633,14 @@ function onStep(idx, on) {
     const steps = (st.snap && st.snap.sn) || parseInt(st.values.steps, 10) || 16;
     const f = "t" + (st.focus + 1) + ":";
     if (st.fzOn) { st.fzLen = idx + 1; freezeApply(); freezeSay(); return; }
+    if (st.randomHeld && !st.shift && !st.delHeld) {
+        /* Mark a retrigger step: random, groove, phrase and style start again there. */
+        if (idx >= 64) return;
+        const was = (big(st.snap && st.snap.rt) >> BigInt(idx)) & 1n;
+        checkpoint(); setP(f + "retrigtoggle", idx); edited();
+        toast("RETRIG", "STEP " + (idx + 1) + (was ? " OFF" : " ON"));
+        return;
+    }
     if (st.shift) {
         /* Pick this step: knobs and value pads now change only it. */
         if (idx >= steps) return;
@@ -605,7 +665,7 @@ function onStep(idx, on) {
 }
 
 function onTrackPad(t, on) {
-    if (!on) { st.held.delete(t); dirty = true; return; }
+    if (!on) { st.held.delete(t); auditionOff(t); dirty = true; return; }
     if (st.copyHeld) {
         if (st.copySrc < 0) { st.copySrc = t; toast("COPY", tname(t) + " TO?"); }
         else { copyTrack(st.copySrc, t); st.copySrc = -1; }
@@ -619,7 +679,10 @@ function onTrackPad(t, on) {
     }
     if (st.muteHeld && !st.muteLock && !st.shift) { st.mutePend ^= 1 << t; dirty = true; return; }   /* applied on release */
     if (st.muteHeld || st.muteLock || st.shift) { toggleMute(t); return; }
-    if (st.held.size === 0) setFocus(t);
+    if (st.held.size === 0) {
+        if (t !== st.focus) setFocus(t);
+        else if (!(menu && menu.isOpen())) { setP("hit:" + (t + 1), "1"); audTracks.add(t); }   /* already selected: hear it */
+    }
     st.held.add(t);
     dirty = true;
 }
@@ -648,6 +711,8 @@ function onSlot(i, on, vel) {
         setP("aud:" + (st.focus + 1), act.note + " " + Math.max(1, vel));
         audNotes[i] = { t: st.focus + 1, n: act.note };
         break;
+    case "randstart": randomStart(!st.shift); break;
+    case "reroll": reroll(); break;
     case "oct":
         st.kbOct = Math.max(-2, Math.min(8, st.kbOct + act.d));
         dirty = true;
@@ -658,6 +723,7 @@ function onSlot(i, on, vel) {
 
 function onNote(note, vel) {
     const on = vel > 0;
+    if (on && st.delHeld) delUsed = true;
     if (note >= 0 && note <= 7) {               /* knob touch: the pads follow */
         if (on) {
             st.touched = note;
@@ -751,7 +817,7 @@ function onTemp(down) {
     if (down) {
         if (st.tempLock) {
             st.tempLock = false; lastPress.temp = -1e9;
-            if (!st.keepTemp) { setP("temp", "0"); toast("TEMP", "RESTORED"); }
+            if (!st.keepTemp) { st.mutePend = 0; setP("temp", "0"); toast("TEMP", "RESTORED"); }
             return;
         }
         const lock = doubleTap("temp");
@@ -760,7 +826,8 @@ function onTemp(down) {
         toast("TEMP", lock ? "LATCHED" : "LET GO TO UNDO");
     } else if (st.tempHeld) {
         st.tempHeld = false;
-        if (!st.tempLock && !st.keepTemp) { setP("temp", "0"); toast("TEMP", "RESTORED"); }
+        /* Mutes picked under Temp and not yet applied go with it. */
+        if (!st.tempLock && !st.keepTemp) { st.mutePend = 0; setP("temp", "0"); toast("TEMP", "RESTORED"); }
     }
 }
 
@@ -802,7 +869,17 @@ function onMenuInput(cc, v) {
 
 function onCC(cc, v) {
     const down = v > 0;
-    if (cc === CC.del) { st.delHeld = down; dirty = true; return; }
+    if (cc === CC.del) {
+        st.delHeld = down; dirty = true;
+        if (menu && menu.isOpen()) return;
+        /* Delete alone: in the Repeats view it cuts the repeats that are
+         * running, in the Length view a tap jumps to a random start. */
+        const view = padMode(st) === "param" ? st.padKey : null;
+        if (down) { delDownAt = st.now; delUsed = false; if (view === "repeats") stopRepeats(); }
+        else if (!delUsed && st.now - delDownAt < TAP_MS && view === "length") randomStart(true);
+        return;
+    }
+    if (down && st.delHeld) delUsed = true;
     if (menu && menu.isOpen() && onMenuInput(cc, v)) { dirty = true; return; }
     if (cc === CC.shift) { st.shift = down; if (!down) stepPicking = false; knobAcc.fill(0); dirty = true; return; }
     if (cc === CC.mute) { onMute(down); return; }
@@ -837,16 +914,17 @@ function onCC(cc, v) {
         } else if (st.settings) { st.settings = false; reselect(); dirty = true; }
         else if (menu) { menu.open(); dirty = true; }
         break;
-    case CC.jogClick: goHome(); break;
+    case CC.jogClick: if (st.randomHeld) reroll(); else goHome(); break;
     case CC.up: case CC.down: {
         const d = cc === CC.up ? 1 : -1;
+        if (st.randomHeld) { stepLoop(d); break; }
         if (st.padKey === "pitch") { st.kbOct = Math.max(-2, Math.min(8, st.kbOct + d)); toast("NOTES", "OCTAVE " + st.kbOct); break; }
         const n = padPages(st.padKey);
         const p = Math.max(0, Math.min(n - 1, st.padPage + d));
         if (p !== st.padPage) { st.padPage = p; toast("PADS", "PAGE " + (p + 1) + "/" + n); }
         break;
     }
-    case CC.undo: doUndo(); break;
+    case CC.undo: if (st.shift) doRedo(); else doUndo(); break;
     case CC.capture:
         if (st.tempHeld || st.tempLock) { st.keepTemp = true; st.tempLock = false; setP("temp", "keep"); toast("TEMP", "KEPT"); edited(); }
         else { st.saveMode = !st.saveMode; st.toast = null; dirty = true; }
@@ -901,7 +979,7 @@ function applySet(id, set) {
     const live = extra && Array.isArray(extra.live) ? extra.live
         : (st.current >= 0 && st.patterns[st.current] ? st.patterns[st.current].tracks : null);
     if (live) stageAll(live, "now");
-    undo = [];
+    undo = []; redo = [];
     editsSinceSave++; idleTicks = 0;
     st.dirty = false; sessionDirty = true;
 }
@@ -980,9 +1058,10 @@ function buttonFrame() {
     b[CC.mute] = w(st.muteHeld || st.muteLock);
     b[CC.loop] = w(st.fzOn);
     b[CC.capture] = w(st.saveMode);
-    b[CC.undo] = undo.length ? BTN.dim : BTN.off;
+    b[CC.undo] = (st.shift ? redo.length : undo.length) ? BTN.dim : BTN.off;
     b[CC.copy] = w(st.copyHeld);
-    b[CC.del] = w(st.delHeld);
+    /* Bright in the Repeats view while repeats run: one press stops them. */
+    b[CC.del] = w(st.delHeld || (padMode(st) === "param" && st.padKey === "repeats" && (((s.rp | 0) >> st.focus) & 1)));
     b[CC.back] = BTN.dim;
     const pp = padPages(st.padKey);
     b[CC.up] = st.padKey === "pitch" || st.padPage < pp - 1 ? BTN.on : BTN.dim;
@@ -1133,6 +1212,7 @@ globalThis.onResume = function () {
     st.shift = st.muteHeld = st.copyHeld = st.delHeld = st.saveMode = false;
     st.mutePend = 0;
     st.held.clear();
+    for (const t of [...audTracks]) auditionOff(t);
     st.copySrc = st.copyPat = st.copyCyc = -1;
     st.touched = -1;
     st.layerHeld = null;
