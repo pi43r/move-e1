@@ -13,13 +13,22 @@ export const LENGTHS = ["Off", "1", "2", "3", "4", "5", "6", "7", "8", "16"];
 export const CLOCKS = ["Move", "Internal", "Computer"];
 export const DESTS = ["Move", "Computer", "Both"];
 export const QUANTS = ["1/4", "1/2", "1 bar", "2 bars", "4 bars", "8 bars"];
-export const STYLES = ["PolyFix", "PolyRamp", "PolyClimb", "MonoFix", "MonoRamp", "MonoClimb"];
-export const PHRASES = ["Cad1", "Cad2", "Cad3", "Cad4", "Saw", "Tri", "Sine", "Pulse"];
+export const STYLES = ["PolyFix", "PolyRamp", "PolyClimb", "MonoFix", "MonoRamp", "MonoClimb", "Dice"];
+export const PHRASES = ["Cad1", "Cad2", "Cad3", "Cad4", "Saw", "Tri", "Sine", "Pulse", "Dice"];
 export const SCALES = ["Chrom", "Major", "Minor", "Penta", "Hira", "Iwato", "Tetra", "Dorian"];
 export const ROOTS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-export const GROOVES = ["Agogo", "Congas", "Timbal", "Bongo", "Saw", "Tri", "Sine", "Pulse"];
+export const GROOVES = ["Agogo", "Congas", "Timbal", "Bongo", "Saw", "Tri", "Sine", "Pulse", "Dice"];
 export const REPEATS_INF = 49;
 export const LOOPS = ["Free", "1", "2", "4", "8"];   /* Loop lock: bars after which chance and random come round */
+export const AUTOS = ["Off", "1", "2", "4", "8"];    /* Auto roll: bars between new dice */
+/* Dice pads, in the order of the engine's layers (bit i of snap.dc / snap.dm). */
+export const DICE = [
+    { layer: "notes", label: "NOTES", short: "NOTE" },
+    { layer: "accents", label: "ACCENTS", short: "ACC" },
+    { layer: "lengths", label: "LENGTHS", short: "LEN" },
+    { layer: "octaves", label: "OCTAVES", short: "OCT" },
+    { layer: "rhythm", label: "RHYTHM", short: "RHY" },
+];
 
 const SCALE_DEG = [
     [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], [0, 2, 4, 5, 7, 9, 11], [0, 2, 3, 5, 7, 8, 10], [0, 2, 4, 7, 9],
@@ -71,6 +80,10 @@ export const TRACK_PARAMS = [
     { key: "ccmode", name: "Send", type: "enum", options: ["Pulse", "Change", "Glide"], div: 8 },
     { key: "slew", name: "Slew", type: "int", min: 0, max: 100, div: 1 },
     { key: "loop", name: "Loop", type: "enum", options: LOOPS, div: 8 },
+    { key: "density", name: "Density", type: "int", min: 0, max: 16, div: 4 },
+    { key: "dicetype", name: "DiceTyp", type: "int", min: 1, max: 16, div: 4 },
+    { key: "autoroll", name: "AutoRol", type: "enum", options: AUTOS, div: 8 },
+    { key: "dicelen", name: "DiceLen", type: "enum", options: ["Off", "On"], div: 8 },
 ];
 
 export const GLOBAL_PARAMS = [
@@ -95,7 +108,7 @@ export const GLOBAL_KEYS = new Set(GLOBAL_PARAMS.map((p) => p.key));
 const LEFT = {
     name: "Left",
     keys: ["steps", "pulses", "cycles", "division", "repeats", "time", "voicing", "range"],
-    alt: ["fill", "rotate", null, null, "ramp", "pace", "style", "phrase"],
+    alt: ["fill", "rotate", "dicetype", "density", "ramp", "pace", "style", "phrase"],
 };
 export const NOTE_PAGES = [
     LEFT,
@@ -107,7 +120,7 @@ const lanes = (a, p) => Array.from({ length: 8 }, (_, i) => p + (a + i));
 export const CC_PAGES = [
     { name: "Left",
         keys: ["steps", "pulses", "cycles", "division", "repeats", "time", null, null],
-        alt: ["fill", "rotate", null, null, "ramp", "pace", null, null] },
+        alt: ["fill", "rotate", null, "density", "ramp", "pace", null, null] },
     { name: "Right",
         keys: ["ccmode", "slew", null, "length", null, "timing", null, "channel"],
         alt: ["prob", null, null, "quant", null, "delay", null, "output"] },
@@ -117,7 +130,7 @@ export const CC_PAGES = [
 export const SETTINGS_PAGE = {
     name: "Settings",
     keys: ["dest", "clock", "bpm", "clockout", "quant", "type", "tail", "phraserate"],
-    alt: ["random", "rate", "swinggrid", "loop", null, "mute", "dir", null],
+    alt: ["random", "rate", "swinggrid", "loop", "autoroll", "mute", "dir", "dicelen"],
 };
 
 export const DEFAULT_NAMES = ["KICK", "SNARE", "HAT", "CLAP", "PERC", "TOM", "RIM", "SHAKE",
@@ -273,6 +286,8 @@ export function padMode(st) {
     if (st.layer === "pattern" || st.saveMode) return "pattern";
     if (st.layer === "cycles") return "cycles";
     if (st.layer === "perform") return "perform";
+    /* Random up and no knob under a finger: the pads are dice. */
+    if (st.layer === "random" && !(st.touched >= 0)) return "dice";
     if (st.padKey === "cycles") return "cycles";
     return "param";
 }
@@ -291,7 +306,10 @@ const DIV_SLOTS = { 0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 10: 7, 11: 8, 12: 
 const COARSE = [-1, -0.5, -0.25, 0, 0.25, 0.5, 1];
 const NUDGE = [-5, -2, -1, null, 1, 2, 5];
 
-const ENUM_COL = { length: COL.green, quant: COL.green, scale: COL.blue, loop: COL.green };
+const ENUM_COL = { length: COL.green, quant: COL.green, scale: COL.blue, loop: COL.green, autoroll: COL.green };
+/* Dice pads: bright while the lane plays, dim while it does not. */
+const DICE_COL = [[COL.orange, COL.dimOrange], [COL.red, COL.dimRed], [COL.green, COL.darkGreen],
+    [COL.brightBlue, COL.dimBlue], [COL.cyan, COL.dimCyan]];
 const set = (key, value, label) => ({ k: "set", key, value: String(value), label });
 
 /* What each of the 16 pads does for the current parameter.
@@ -320,6 +338,23 @@ export function padModel(st) {
             pads[i] = { c: held || latched ? COL.white : COL[p.color], act: { k: "perf", i } };
         }
         return { title: "PERFORM", pads };
+    }
+    if (mode === "dice") {
+        /* Upper row: one pad per lane, All, Back. Lower row: auto roll, and
+         * the track's random dice at the right end. */
+        const cc = isCCBit(s, st.focus | 0);
+        const dm = s.dm | 0;
+        DICE.forEach((d, i) => {
+            if (cc && d.layer !== "rhythm") return;
+            pads[i] = { c: DICE_COL[i][(dm >> i) & 1 ? 0 : 1], act: { k: "dice", layer: d.layer, label: d.label } };
+        });
+        pads[6] = { c: COL.purple, act: { k: "dice", layer: "all", label: "ALL" } };
+        pads[7] = { c: (s.dh | 0) ? COL.pink : COL.dimPink, act: { k: "diceback" } };
+        AUTOS.forEach((o, i) => {
+            pads[8 + i] = { c: o === v.autoroll ? COL.white : (i ? COL.green : COL.grey), act: { k: "autoroll", value: o } };
+        });
+        pads[15] = { c: COL.pink, act: { k: "reroll" } };
+        return { title: "DICE", pads };
     }
     if (mode === "cycles") {
         const n = parseInt(v.cycles, 10) || 1;
@@ -385,16 +420,16 @@ export function padModel(st) {
     }
 
     if (key === "style") {
-        [0, 1, 2, 8, 9, 10].forEach((slot, i) => {
-            pads[slot] = { c: STYLES[i] === cur ? COL.white : COL.darkGreen, act: set("style", STYLES[i], STYLES[i]) };
+        [0, 1, 2, 8, 9, 10, 4].forEach((slot, i) => {
+            pads[slot] = { c: STYLES[i] === cur ? COL.white : (i === 6 ? COL.purple : COL.darkGreen), act: set("style", STYLES[i], STYLES[i]) };
         });
         dirPads(pads, v);
         return { title, pads };
     }
     if (key === "phrase" || key === "groove") {
         const opts = key === "phrase" ? PHRASES : GROOVES;
-        [0, 1, 2, 3, 8, 9, 10, 11].forEach((slot, i) => {
-            pads[slot] = { c: opts[i] === cur ? COL.white : (key === "phrase" && i < 4 ? COL.green : COL.darkGreen), act: set(key, opts[i], opts[i]) };
+        [0, 1, 2, 3, 8, 9, 10, 11, 4].forEach((slot, i) => {
+            pads[slot] = { c: opts[i] === cur ? COL.white : (i === 8 ? COL.purple : (key === "phrase" && i < 4 ? COL.green : COL.darkGreen)), act: set(key, opts[i], opts[i]) };
         });
         if (key === "phrase") ratePads(pads, v);
         return { title, pads };
@@ -447,6 +482,7 @@ export function padModel(st) {
     let vals;
     if (isLane(key)) vals = [-1].concat(Array.from({ length: 15 }, (_, i) => Math.round(i * 127 / 14)));
     else if (key === "bpm") vals = [60, 70, 80, 90, 100, 110, 115, 120, 125, 130, 135, 140, 150, 160, 170, 180];
+    else if (key === "density") vals = Array.from({ length: 16 }, (_, i) => i + 1);
     else if (span <= 16) vals = Array.from({ length: Math.min(16, span + 1) }, (_, i) => m.min + i);
     else if (span <= 64) vals = Array.from({ length: 16 }, (_, i) => m.min + page * 16 + i).filter((x) => x <= m.max);
     else vals = Array.from({ length: 16 }, (_, i) => Math.round(m.min + span * (i + 1) / 16));
@@ -515,8 +551,9 @@ export function ledFrame(st) {
     let hits = 0n;
     try { hits = BigInt("0x" + (s.h || "0")); } catch (e) { hits = 0n; }
     const cur = s.st ? s.st[st.focus] : -1;
-    let sm = 0n, se = 0n, rt = 0n;
+    let sm = 0n, se = 0n, rt = 0n, lv = hits;
     try { sm = BigInt("0x" + (s.sm || "0")); se = BigInt("0x" + (s.se || "0")); rt = BigInt("0x" + (s.rt || "0")); } catch (e) { sm = se = rt = 0n; }
+    try { if (s.lv !== undefined) lv = BigInt("0x" + (s.lv || "0")); } catch (e) { lv = hits; }
     /* Shift shows every step that carries its own values, hit or not.
      * Random or Delete held shows the retrigger steps. */
     const showRt = st.randomHeld || st.delHeld;
@@ -525,10 +562,11 @@ export function ledFrame(st) {
         let c = COL.off;
         if (idx < steps) {
             const on = (hits >> BigInt(idx)) & 1n;
-            c = on ? typeColor(s, st.focus) : COL.dim;
+            const thin = on && !((lv >> BigInt(idx)) & 1n);             /* Density took it out */
+            c = on ? (thin ? typeDark(s, st.focus) : typeColor(s, st.focus)) : COL.dim;
             const own = (se >> BigInt(idx)) & 1n;
-            if (own && on) c = COL.red;                                 /* carries its own values */
-            if (s.r && idx === cur) c = on ? COL.white : COL.lightGrey;
+            if (own && on && !thin) c = COL.red;                        /* carries its own values */
+            if (s.r && idx === cur) c = on && !thin ? COL.white : COL.lightGrey;
             if (own && st.shift) c = COL.red;
             if (showRt && ((rt >> BigInt(idx)) & 1n)) c = COL.pink;
             if ((sm >> BigInt(idx)) & 1n) c = COL.white;                /* picked for step edit */
@@ -575,8 +613,8 @@ export function footerFor(st) {
     const out = [];
     if (st.fzOn) return [["FREEZE", (st.fzLen | 0) + " ST " + ((st.fzMask & 0xFFFF) === 0xFFFF ? "ALL" : "PART")]];
     if (st.randomHeld && !st.settings) {
-        const l = (st.values || {}).loop || "Free";
-        return [["LOOP", l === "Free" ? "FREE" : l + (l === "1" ? " BAR" : " BARS")]];
+        const l = (st.values || {}).loop || "Free", a = (st.values || {}).autoroll || "Off";
+        return [["LOOP", l === "Free" ? "FREE" : l + "B"], ["AUTO", a === "Off" ? "OFF" : a + "B"]];
     }
     if (s.tmp) out.push(["TEMP", ""]);
     if (s.sm && s.sm !== "0") {
@@ -761,7 +799,7 @@ export function drawValueList(ctx, st) {
  * picked for editing are filled and underlined. */
 export function drawCycleStrip(ctx, st) {
     const s = st.snap || {};
-    if (st.settings || st.warn || st.fzOn || st.padKey === "pitch" || (s.sm && s.sm !== "0") || (st.toast && st.toast.until > (st.now || 0))) return;
+    if (st.settings || st.warn || st.fzOn || st.randomHeld || st.padKey === "pitch" || (s.sm && s.sm !== "0") || (st.toast && st.toast.until > (st.now || 0))) return;
     const n = Math.max(1, Math.min(16, parseInt((st.values || {}).cycles, 10) || 1));
     const em = s.em | 0, ce = s.ce | 0, pc = s.pc | 0;
     const x0 = 128 - n * 6, y = 57;

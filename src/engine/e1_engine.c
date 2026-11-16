@@ -29,16 +29,18 @@ static const char *const OUT_NAMES[]    = { "Global", "Move", "Computer", "Both"
 static const char *const DEST_NAMES[]   = { "Move", "Computer", "Both" };
 static const char *const CCMODE_NAMES[] = { "Pulse", "Change", "Glide" };
 static const char *const ONOFF_NAMES[]  = { "Off", "On" };
-static const char *const STYLE_NAMES[]  = { "PolyFix", "PolyRamp", "PolyClimb", "MonoFix", "MonoRamp", "MonoClimb" };
-static const char *const PHRASE_NAMES[] = { "Cad1", "Cad2", "Cad3", "Cad4", "Saw", "Tri", "Sine", "Pulse" };
+static const char *const STYLE_NAMES[]  = { "PolyFix", "PolyRamp", "PolyClimb", "MonoFix", "MonoRamp", "MonoClimb", "Dice" };
+static const char *const PHRASE_NAMES[] = { "Cad1", "Cad2", "Cad3", "Cad4", "Saw", "Tri", "Sine", "Pulse", "Dice" };
 static const char *const SCALE_NAMES[]  = { "Chrom", "Major", "Minor", "Penta", "Hira", "Iwato", "Tetra", "Dorian" };
 static const char *const ROOT_NAMES[]   = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
-static const char *const GROOVE_NAMES[] = { "Agogo", "Congas", "Timbal", "Bongo", "Saw", "Tri", "Sine", "Pulse" };
+static const char *const GROOVE_NAMES[] = { "Agogo", "Congas", "Timbal", "Bongo", "Saw", "Tri", "Sine", "Pulse", "Dice" };
 static const char *const GRID_NAMES[]   = { "x1", "x2", "x4" };
 static const char *const DIR_NAMES[]    = { "Up", "Down" };
 static const char *const TAIL_NAMES[]   = { "Choke", "Tail" };
 static const char *const PRATE_NAMES[]  = { "x1", "x2", "/2" };
 static const char *const LOOP_NAMES[]   = { "Free", "1", "2", "4", "8" };
+static const char *const AUTO_NAMES[]   = { "Off", "1", "2", "4", "8" };
+static const char *const DICE_NAMES[E1_DICE_LAYERS] = { "notes", "accents", "lengths", "octaves", "rhythm" };
 
 static const int8_t SCALE_DEG[8][12] = {
     { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 },
@@ -100,13 +102,13 @@ static const pdesc_t P[E1_NP] = {
     [E1_P_PITCH]      = { "pitch",      -36, 36, 0,  NULL,         F_STEP | F_CYC | F_RC, 7 },
     [E1_P_HARMONY]    = { "harmony",    -16, 16, 0,  NULL,         F_STEP | F_CYC | F_RC, 4 },
     [E1_P_VOICING]    = { "voicing",    -16, 16, 0,  NULL,         F_STEP | F_CYC | F_RR, 4 },
-    [E1_P_STYLE]      = { "style",      0, 5, 0,     STYLE_NAMES,  F_STEP | F_CYC, 0 },
+    [E1_P_STYLE]      = { "style",      0, E1_STYLE_DICE, 0, STYLE_NAMES,  F_STEP | F_CYC, 0 },
     [E1_P_RANGE]      = { "range",      -16, 16, 0,  NULL,         F_STEP | F_CYC | F_RR, 7 },
-    [E1_P_PHRASE]     = { "phrase",     0, 7, 0,     PHRASE_NAMES, F_STEP | F_CYC, 0 },
+    [E1_P_PHRASE]     = { "phrase",     0, E1_PHRASE_DICE, 0, PHRASE_NAMES, F_STEP | F_CYC, 0 },
     [E1_P_SCALE]      = { "scale",      0, 7, 0,     SCALE_NAMES,  F_STEP | F_CYC, 0 },
     [E1_P_ROOT]       = { "root",       0, 11, 0,    ROOT_NAMES,   F_STEP | F_CYC, 0 },
     [E1_P_ACCENT]     = { "accent",     -100, 100, 0, NULL,        F_STEP | F_CYC | F_RR, 100 },
-    [E1_P_GROOVE]     = { "groove",     0, 7, 0,     GROOVE_NAMES, F_STEP | F_CYC, 0 },
+    [E1_P_GROOVE]     = { "groove",     0, E1_GROOVE_DICE, 0, GROOVE_NAMES, F_STEP | F_CYC, 0 },
     [E1_P_TIMING]     = { "timing",     -50, 50, 0,  NULL,         F_CYC | F_RR, 50 },
     [E1_P_SWINGGRID]  = { "swinggrid",  0, 2, 0,     GRID_NAMES,   0, 0 },
     [E1_P_RANDOM]     = { "random",     0, 100, 100, NULL,         0, 0 },
@@ -120,6 +122,10 @@ static const pdesc_t P[E1_NP] = {
     [E1_P_CCMODE]     = { "ccmode",     0, 2, 0,     CCMODE_NAMES, 0, 0 },
     [E1_P_SLEW]       = { "slew",       0, 100, 0,   NULL,         0, 0 },
     [E1_P_LOOP]       = { "loop",       0, E1_LOOPS - 1, 0, LOOP_NAMES, 0, 0 },
+    [E1_P_DENSITY]    = { "density",    0, 16, 16,   NULL,         F_CYC, 0 },
+    [E1_P_DICETYPE]   = { "dicetype",   1, 16, 8,    NULL,         0, 0 },
+    [E1_P_AUTOROLL]   = { "autoroll",   0, E1_LOOPS - 1, 0, AUTO_NAMES, 0, 0 },
+    [E1_P_DICELEN]    = { "dicelen",    0, 1, 0,     ONOFF_NAMES,  0, 0 },
 };
 
 int e1_param_count(void) { return E1_NP; }
@@ -324,6 +330,179 @@ uint64_t e1_hit_mask(const e1_engine_t *e, int track, int cycle, int fill)
     return m;
 }
 
+/* ----------------------------------------------------------------- dice */
+
+static uint64_t dice_h(uint32_t seed, int layer, int i)
+{
+    return mix(((uint64_t)seed << 32) ^ ((uint64_t)(0xD1CE00 + layer) << 8) ^ (uint64_t)(i & 0xFF));
+}
+
+/* How long a hit holds out when Density thins the track: higher stays
+ * longer. Unrolled, the strong beats stay longest; rolled, the dice say. */
+static uint32_t density_rank(const e1_track_t *t, int step)
+{
+    uint32_t seed = t->dseed[E1_DICE_RHYTHM];
+    uint32_t r = (uint32_t)(dice_h(seed, E1_DICE_RHYTHM, step) & 0xFFFFF);
+    if (seed) return r;
+    int w = step == 0 ? 6 : !(step & 15) ? 5 : !(step & 7) ? 4 : !(step & 3) ? 3 : !(step & 1) ? 2 : 1;
+    return ((uint32_t)w << 20) | r;
+}
+
+/* Does the hit on `step` survive Density? The same hits go every time
+ * round, so a thinned pattern is still a pattern. */
+static int dense(const e1_engine_t *e, int ti, int c, int step, int fill)
+{
+    const e1_track_t *t = &e->t[ti];
+    int d = eff(e, ti, E1_P_DENSITY, c, -1);
+    if (d >= 16) return 1;
+    if (d <= 0) return 0;
+    int steps = eff(e, ti, E1_P_STEPS, c, -1);
+    uint32_t mine = density_rank(t, step);
+    int n = 0, above = 0;
+    for (int i = 0; i < steps && i < 64; i++) {
+        if (!hit(e, ti, c, i, fill)) continue;
+        n++;
+        uint32_t r = density_rank(t, i);
+        if (i != step && (r > mine || (r == mine && i < step))) above++;
+    }
+    int keep = (n * d + 15) / 16;
+    return above < keep;
+}
+
+uint64_t e1_live_mask(const e1_engine_t *e, int track, int cycle, int fill)
+{
+    uint64_t m = e1_hit_mask(e, track, cycle, fill);
+    if (!m || eff(e, track, E1_P_DENSITY, cycle, -1) >= 16) return m;
+    for (int i = 0; i < 64; i++) if (((m >> i) & 1) && !dense(e, track, cycle, i, fill)) m &= ~(1ULL << i);
+    return m;
+}
+
+/* Notes lane: where in the track's notes step i lands (0..len-1) and an
+ * octave jump. Type steers it: low is wide, any note and octave jumps; high
+ * is tight, close to the first note with notes said twice. The same seed
+ * gives related lines across Type, so turning it morphs the line. */
+static int dice_note(uint32_t seed, int type, int i, int len, int *oct)
+{
+    double w = (double)(clampi(type, 1, 16) - 1) / 15.0;
+    double frac = 0.0;
+    int o = 0;
+    i &= 15;
+    for (int j = 0; j <= i; j++) {
+        uint64_t h = dice_h(seed, E1_DICE_NOTES, j);
+        double u1 = (double)(h & 0xFFFF) / 65536.0, u2 = (double)((h >> 16) & 0xFFFF) / 65536.0;
+        double u3 = (double)((h >> 32) & 0xFFFF) / 65536.0;
+        if (j > 0 && u3 < 0.55 * w) continue;                  /* say the last note again */
+        frac = pow(u1, 1.0 + 5.0 * w);
+        o = u2 < 0.25 * (1.0 - w) ? 1 : (u2 > 1.0 - 0.12 * (1.0 - w) ? -1 : 0);
+    }
+    *oct = o;
+    return clampi((int)(frac * (double)len), 0, len - 1);
+}
+
+static int dice_accent(uint32_t seed, int i)       /* tenths: strong, plain, ghost */
+{
+    int r = (int)(dice_h(seed, E1_DICE_ACCENTS, i & 15) % 100ULL);
+    return r < 25 ? 10 : (r < 70 ? 0 : -8);
+}
+static int dice_length(uint32_t seed, int i)       /* 0 short, 1 medium, 2 long, 3 tied */
+{
+    int r = (int)(dice_h(seed, E1_DICE_LENGTHS, i & 15) % 100ULL);
+    return r < 35 ? 0 : (r < 70 ? 1 : (r < 88 ? 2 : 3));
+}
+static int dice_octave(uint32_t seed, int i)       /* octaves to jump: 0, 1 or 2 */
+{
+    int r = (int)(dice_h(seed, E1_DICE_OCTAVES, i & 15) % 100ULL);
+    return r < 55 ? 0 : (r < 88 ? 1 : 2);
+}
+
+int e1_dice_rolled(const e1_track_t *t)
+{
+    int m = 0;
+    for (int l = 0; l < E1_DICE_LAYERS; l++) if (t->dseed[l]) m |= 1 << l;
+    return m;
+}
+
+int e1_dice_active(const e1_engine_t *e, int track)
+{
+    if (track < 0 || track >= E1_TRACKS) return 0;
+    const e1_track_t *t = &e->t[track];
+    int c = e1_display_cycle(t), m = 0;
+    if (eff(e, track, E1_P_STYLE, c, -1) == E1_STYLE_DICE) m |= 1 << E1_DICE_NOTES;
+    if (eff(e, track, E1_P_GROOVE, c, -1) == E1_GROOVE_DICE) m |= 1 << E1_DICE_ACCENTS;
+    if (t->v[E1_P_DICELEN]) m |= 1 << E1_DICE_LENGTHS;
+    if (eff(e, track, E1_P_PHRASE, c, -1) == E1_PHRASE_DICE) m |= 1 << E1_DICE_OCTAVES;
+    if (t->dseed[E1_DICE_RHYTHM]) m |= 1 << E1_DICE_RHYTHM;
+    return m;
+}
+
+static void dice_push(e1_track_t *t)
+{
+    if (t->dhist_n >= E1_DICE_HISTORY) {
+        memmove(&t->dhist[0], &t->dhist[1], sizeof t->dhist[0] * (E1_DICE_HISTORY - 1));
+        t->dhist_n = E1_DICE_HISTORY - 1;
+    }
+    e1_dice_snap_t *h = &t->dhist[t->dhist_n++];
+    memcpy(h->seed, t->dseed, sizeof h->seed);
+    h->style = (uint8_t)t->v[E1_P_STYLE]; h->groove = (uint8_t)t->v[E1_P_GROOVE];
+    h->phrase = (uint8_t)t->v[E1_P_PHRASE]; h->dlen = (uint8_t)t->v[E1_P_DICELEN];
+}
+
+static int dice_back(e1_track_t *t)
+{
+    if (!t->dhist_n) return 0;
+    const e1_dice_snap_t *h = &t->dhist[--t->dhist_n];
+    memcpy(t->dseed, h->seed, sizeof h->seed);
+    t->v[E1_P_STYLE] = h->style; t->v[E1_P_GROOVE] = h->groove;
+    t->v[E1_P_PHRASE] = h->phrase; t->v[E1_P_DICELEN] = h->dlen;
+    return 1;
+}
+
+static const int8_t DICE_PAR[3] = { E1_P_STYLE, E1_P_GROOVE, E1_P_PHRASE };
+static const int8_t DICE_ENT[3] = { E1_STYLE_DICE, E1_GROOVE_DICE, E1_PHRASE_DICE };
+static int dice_list(int layer)
+{
+    return layer == E1_DICE_NOTES ? 0 : (layer == E1_DICE_ACCENTS ? 1 : (layer == E1_DICE_OCTAVES ? 2 : -1));
+}
+
+/* Put a layer's Dice entry up, remembering what it replaces. */
+static void dice_select(e1_track_t *t, int layer)
+{
+    int k = dice_list(layer);
+    if (layer == E1_DICE_LENGTHS) t->v[E1_P_DICELEN] = 1;
+    /* An amount of zero would leave the new lane unheard. */
+    if (layer == E1_DICE_ACCENTS && t->v[E1_P_ACCENT] == 0) t->v[E1_P_ACCENT] = 60;
+    if (layer == E1_DICE_OCTAVES && t->v[E1_P_RANGE] == 0)
+        t->v[E1_P_RANGE] = (int16_t)clampi(SCALE_LEN[clampi(t->v[E1_P_SCALE], 0, 7)], 1, 16);
+    if (k < 0 || t->v[DICE_PAR[k]] == DICE_ENT[k]) return;
+    t->dwas[k] = (uint8_t)(t->v[DICE_PAR[k]] + 1);
+    t->v[DICE_PAR[k]] = DICE_ENT[k];
+}
+
+static void dice_clear(e1_track_t *t, int layer)
+{
+    int k = dice_list(layer);
+    t->dseed[layer] = 0;
+    if (layer == E1_DICE_LENGTHS) t->v[E1_P_DICELEN] = 0;
+    if (k < 0) return;
+    if (t->v[DICE_PAR[k]] == DICE_ENT[k])
+        t->v[DICE_PAR[k]] = (int16_t)(t->dwas[k] ? clampi(t->dwas[k] - 1, 0, DICE_ENT[k] - 1) : 0);
+    t->dwas[k] = 0;
+}
+
+static uint32_t new_seed(e1_engine_t *e, int ti, int layer)
+{
+    uint64_t h = mix(((uint64_t)e->seed << 32) ^ ((uint64_t)(++e->nonce) << 12) ^ (uint64_t)(ti * 8 + layer) ^
+                     ((uint64_t)(int64_t)(e->tick * 16.0) << 20));
+    uint32_t s = (uint32_t)(h >> 16) & 0x7FFFFFFFu;
+    return s ? s : 1u;
+}
+
+static int dice_layer(const char *name)
+{
+    for (int l = 0; l < E1_DICE_LAYERS; l++) if (strcmp(name, DICE_NAMES[l]) == 0) return l;
+    return strcmp(name, "all") == 0 ? E1_DICE_LAYERS : -1;
+}
+
 int e1_steps(const e1_engine_t *e, int track, int cycle)
 {
     if (track < 0 || track >= E1_TRACKS) return 16;
@@ -473,6 +652,7 @@ void e1_join(e1_engine_t *e, double origin, double now)
         t->cur_step = -1;
         t->cur_cycle = 0;
         t->rt_T = 0;
+        t->ar_idx = 0;
         for (int c = 0; c < E1_CHAINS; c++) t->chain[c].left = 0;
         resync(e, t);
     }
@@ -590,7 +770,7 @@ static int phrase_tenths(int phrase, double ph)
 /* The notes one pulse plays. pidx counts pulses since the cycle began (and
  * goes on counting through repeats), which is what moves mono styles and
  * Climb along. Returns the note count, at most E1_POOL. */
-static int build_notes(const e1_engine_t *e, int ti, int c, int step, int pidx, int shift, int ridx, int *out)
+static int build_notes(const e1_engine_t *e, int ti, int c, int step, int pidx, int dpos, int shift, int ridx, int *out)
 {
     const e1_track_t *t = &e->t[ti];
     int n = t->pool_n;
@@ -609,7 +789,13 @@ static int build_notes(const e1_engine_t *e, int ti, int c, int step, int pidx, 
     }
     sort_notes(L, len);
 
-    int poly = style < 3, kind = style % 3;
+    int dice = style == E1_STYLE_DICE;
+    int poly = style < 3, kind = dice ? 1 : style % 3;       /* Dice takes Voicing as Ramp does */
+    if (dice && len == 1) {                                   /* one note: play around it in the scale */
+        L[1] = shift_in_scale(L[0], 2, scale, root);
+        L[2] = shift_in_scale(L[0], 4, scale, root);
+        len = n = 3;
+    }
     int va = voicing < 0 ? -voicing : voicing, vs = voicing < 0 ? -1 : 1;
     if (kind == 1) {                                          /* Ramp: add notes like an arpeggiator range */
         for (int k = 0; k < va && len < E1_POOL + 16; k++) {
@@ -631,8 +817,12 @@ static int build_notes(const e1_engine_t *e, int ti, int c, int step, int pidx, 
         for (int j = 0; j < m; j++) out[j] = L[j];
         return m;
     }
-    int idx = pidx % len;
-    out[0] = L[down ? len - 1 - idx : idx];
+    int idx = pidx % len, oct = 0;
+    if (dice) idx = dice_note(t->dseed[E1_DICE_NOTES], t->v[E1_P_DICETYPE], dpos, len, &oct);
+    int note = L[down ? len - 1 - idx : idx] + 12 * oct;
+    while (note > 127) note -= 12;
+    while (note < 0) note += 12;
+    out[0] = note;
     return 1;
 }
 
@@ -723,9 +913,10 @@ static int cc_eff(const e1_engine_t *e, int ti, int lane, int c, int ridx)
     return clampi(v, 0, 127);
 }
 
-static int groove_tenths(int groove, int step)
+static int groove_tenths(const e1_track_t *t, int groove, int step)
 {
     int i = step & 15;
+    if (groove >= E1_GROOVE_DICE) return dice_accent(t->dseed[E1_DICE_ACCENTS], i);
     if (groove < 4) return GROOVE_SHAPE[groove][i];
     switch (groove) {
     case 4: return -10 + (20 * i) / 15;
@@ -756,6 +947,23 @@ static int random_step(const e1_track_t *t, const slot_t *s)
     return (int)((free_time(t, s) / div_ticks(t->v[E1_P_RATE])) & 0x3FFFFFFF);
 }
 
+/* Auto roll: every N bars the lanes that were rolled by hand get new dice. */
+static void auto_roll(e1_track_t *t, const slot_t *s)
+{
+    int bars = e1_loop_bars[clampi(t->v[E1_P_AUTOROLL], 0, E1_LOOPS - 1)];
+    if (!bars || t->p_freeze) return;
+    int64_t idx = s->start / ((int64_t)bars * E1_TICKS_PER_BAR);
+    if (idx == t->ar_idx) return;
+    t->ar_idx = idx;
+    if (!e1_dice_rolled(t)) return;
+    dice_push(t);
+    for (int l = 0; l < E1_DICE_LAYERS; l++) {
+        if (!t->dseed[l]) continue;
+        uint32_t n = (uint32_t)(mix(((uint64_t)t->dseed[l] << 20) ^ (uint64_t)idx ^ ((uint64_t)l << 60)) >> 16) & 0x7FFFFFFFu;
+        t->dseed[l] = n ? n : 1u;
+    }
+}
+
 static void fire(e1_engine_t *e, int ti, const slot_t *s, double when, e1_emit_fn emit, void *user)
 {
     e1_track_t *t = &e->t[ti];
@@ -764,7 +972,9 @@ static void fire(e1_engine_t *e, int ti, const slot_t *s, double when, e1_emit_f
     t->cur_step = step;
     t->cur_cycle = c;
     if (t->retrig && is_retrig(t, step)) t->rt_T = s->start;
+    auto_roll(t, s);
     if (!hit(e, ti, c, step, t->p_fill)) return;
+    if (!dense(e, ti, c, step, t->p_fill)) return;
 
     /* The nearest retrigger step at or before this one in the cycle: style
      * and groove count from it. */
@@ -774,6 +984,7 @@ static void fire(e1_engine_t *e, int ti, const slot_t *s, double when, e1_emit_f
         if (upto && is_retrig(t, i) && (rb < 0 || !t->p_reverse)) rb = i;
     }
 
+    int dpos = rb < 0 ? step : abs(step - rb);   /* where the dice lanes are */
     uint32_t seed = tseed(e, t);
     int ridx = random_step(t, s);
     /* With Loop set the chance draws come round with the loop too. */
@@ -811,16 +1022,35 @@ static void fire(e1_engine_t *e, int ti, const slot_t *s, double when, e1_emit_f
     if (pT < 0) pT = -pT;
     double ph = (double)(pT % ptk) / (double)ptk;
     int range = eff_s(e, ti, E1_P_RANGE, c, ridx, step);
-    int shift = (int)lrint((double)range * (double)phrase_tenths(eff_s(e, ti, E1_P_PHRASE, c, ridx, step), ph) / 10.0);
+    int phrase = eff_s(e, ti, E1_P_PHRASE, c, ridx, step);
+    int shift;
+    if (phrase >= E1_PHRASE_DICE) {              /* whole octaves, as many as Range holds */
+        int sl = SCALE_LEN[clampi(eff_s(e, ti, E1_P_SCALE, c, ridx, step), 0, 7)];
+        int room = abs(range) / sl, o = dice_octave(t->dseed[E1_DICE_OCTAVES], dpos);
+        if (range && room < 1) room = 1;
+        if (o > room) o = room;
+        shift = (range < 0 ? -o : o) * sl;
+    } else shift = (int)lrint((double)range * (double)phrase_tenths(phrase, ph) / 10.0);
 
     double sp = speed_f(t);
     int vel = eff_s(e, ti, E1_P_VELOCITY, c, ridx, step);
     int accent = eff_s(e, ti, E1_P_ACCENT, c, ridx, step);
-    if (accent) vel += accent * 6 * groove_tenths(eff_s(e, ti, E1_P_GROOVE, c, ridx, step), rb < 0 ? step : abs(step - rb)) / 100;
+    if (accent) vel += accent * 6 * groove_tenths(t, eff_s(e, ti, E1_P_GROOVE, c, ridx, step), dpos) / 100;
     if (t->p_accent) vel = 127;
     vel = clampi(vel, 1, 127);
 
     double len = (double)s->dur * (double)eff_s(e, ti, E1_P_SUSTAIN, c, ridx, step) / 50.0 / sp;
+    if (t->v[E1_P_DICELEN]) {                    /* short, medium, long, or tied to the next hit */
+        int k = dice_length(t->dseed[E1_DICE_LENGTHS], dpos);
+        if (k == 0) len *= 0.4;
+        else if (k == 2) len *= 2.2;
+        else if (k == 3) {
+            int gap = 1;
+            while (gap < s->steps && !hit(e, ti, c, (step + (t->p_reverse ? -gap : gap) + s->steps * 2) % s->steps, t->p_fill)) gap++;
+            double tie = (double)s->dur * (double)gap / sp;
+            if (tie > len) len = tie;
+        }
+    }
     int repeats = eff_s(e, ti, E1_P_REPEATS, c, ridx, step);
     double interval = (double)div_ticks(eff_s(e, ti, E1_P_TIME, c, ridx, step)) / sp;
     double pace = 1.0 + (double)eff_s(e, ti, E1_P_PACE, c, ridx, step) / 200.0;
@@ -838,7 +1068,7 @@ static void fire(e1_engine_t *e, int ti, const slot_t *s, double when, e1_emit_f
         if (t->chain[k].left > 1000) t->chain[k].left = 0;
 
     int notes[E1_POOL];
-    int n = build_notes(e, ti, c, step, pidx, shift, ridx, notes);
+    int n = build_notes(e, ti, c, step, pidx, dpos, shift, ridx, notes);
     int drop = prob > 0 ? prob : 0;
     for (int j = 0; j < n; j++) {
         if (drop && e1_chance(seed, ti, (int64_t)((uint64_t)id * 31u + (uint64_t)j + 1u)) < drop) continue;
@@ -858,7 +1088,7 @@ static void fire(e1_engine_t *e, int ti, const slot_t *s, double when, e1_emit_f
         ch->pace = pace;
         ch->len = len;
         ch->vel = vel; ch->ramp = ramp;
-        ch->cyc = c; ch->step = step; ch->pidx = pidx; ch->shift = shift; ch->ridx = ridx;
+        ch->cyc = c; ch->step = step; ch->pidx = pidx; ch->dpos = dpos; ch->shift = shift; ch->ridx = ridx;
         ch->prob = drop;
         ch->id = (uint32_t)id;
     }
@@ -886,7 +1116,7 @@ static void run_chains(e1_engine_t *e, int ti, double now, e1_emit_fn emit, void
             ch->left--;
             if (!(t->v[E1_P_MUTE] || t->p_solo_mute)) {
                 int notes[E1_POOL];
-                int n = build_notes(e, ti, ch->cyc, ch->step, ch->pidx + ch->k, ch->shift, ch->ridx, notes);
+                int n = build_notes(e, ti, ch->cyc, ch->step, ch->pidx + ch->k, ch->dpos + ch->k, ch->shift, ch->ridx, notes);
                 int vel = clampi(ch->vel + ch->ramp * 32 * ch->k / 100, 1, 127);
                 double len = ch->len;
                 if (len > ch->interval * 0.9) len = ch->interval * 0.9;
@@ -1055,7 +1285,7 @@ void e1_audition(e1_engine_t *e, int track, int on, e1_emit_fn emit, void *user)
         return;
     }
     int notes[E1_POOL];
-    int n = build_notes(e, track, c, -1, 0, 0, -1, notes);
+    int n = build_notes(e, track, c, -1, 0, 0, 0, -1, notes);
     int vel = clampi(eff(e, track, E1_P_VELOCITY, c, -1), 1, 127);
     uint8_t ch = (uint8_t)((t->v[E1_P_CHANNEL] - 1) & 0x0F);
     t->aud_ch = ch; t->aud_ports = (uint8_t)ports;
@@ -1215,6 +1445,40 @@ static int set_track(e1_engine_t *e, int ti, const char *key, const char *val, i
         return 1;
     }
     if (strcmp(key, "rseed") == 0) { t->rseed = (uint32_t)strtoul(val, NULL, 10); return 1; }
+    if (strcmp(key, "dice") == 0) {
+        const char *q = val;
+        for (int l = 0; l < E1_DICE_LAYERS; l++) {
+            char *end = NULL;
+            t->dseed[l] = (uint32_t)strtoul(q, &end, 10);
+            q = (end && *end == ',') ? end + 1 : (end ? end : q);
+        }
+        return 1;
+    }
+    if (strcmp(key, "dicewas") == 0) {
+        int a = 0, b = 0, c2 = 0;
+        sscanf(val, "%d,%d,%d", &a, &b, &c2);
+        t->dwas[0] = (uint8_t)clampi(a, 0, E1_STYLE_DICE);
+        t->dwas[1] = (uint8_t)clampi(b, 0, E1_GROOVE_DICE);
+        t->dwas[2] = (uint8_t)clampi(c2, 0, E1_PHRASE_DICE);
+        return 1;
+    }
+    if (strcmp(key, "roll") == 0 || strcmp(key, "cleardice") == 0) {
+        int l = dice_layer(val), roll = key[0] == 'r';
+        if (l < 0) return 0;
+        int cc = t->v[E1_P_TYPE] == E1_TYPE_CC;          /* a CC track has a rhythm and nothing else */
+        dice_push(t);
+        for (int k = 0; k < E1_DICE_LAYERS; k++) {
+            if (l != E1_DICE_LAYERS && l != k) continue;
+            if (cc && k != E1_DICE_RHYTHM) continue;
+            if (!roll) { dice_clear(t, k); continue; }
+            t->dseed[k] = new_seed(e, ti, k);
+            dice_select(t, k);
+        }
+        /* Rhythm alone on a full track: thin it a little so the roll is heard. */
+        if (roll && l == E1_DICE_RHYTHM && t->v[E1_P_DENSITY] >= 16) t->v[E1_P_DENSITY] = 12;
+        return 1;
+    }
+    if (strcmp(key, "rollback") == 0) return dice_back(t);
     if (strcmp(key, "clearedits") == 0) {
         if (em) { for (int c = 0; c < E1_CYCLES; c++) if (em & (1u << c)) t->cadd[c] = t->cdel[c] = 0; }
         else t->add_mask = t->del_mask = 0;
@@ -1384,6 +1648,9 @@ int e1_get(const e1_engine_t *e, int track, const char *key, char *buf, int len)
     if (strcmp(key, "name") == 0) return snprintf(buf, (size_t)len, "%s", t->name);
     if (strcmp(key, "retrig") == 0) return snprintf(buf, (size_t)len, "%llx", (unsigned long long)t->retrig);
     if (strcmp(key, "rseed") == 0) return snprintf(buf, (size_t)len, "%u", (unsigned)t->rseed);
+    if (strcmp(key, "dice") == 0)
+        return snprintf(buf, (size_t)len, "%u,%u,%u,%u,%u", (unsigned)t->dseed[0], (unsigned)t->dseed[1],
+                        (unsigned)t->dseed[2], (unsigned)t->dseed[3], (unsigned)t->dseed[4]);
     if (strcmp(key, "pool") == 0) {
         int pos = 0;
         buf[0] = 0;
@@ -1432,6 +1699,11 @@ int e1_dump_track(const e1_engine_t *e, int track, char *buf, int len)
     if (t->del_mask) pos = appendf(buf, len, pos, "delmask=%llx\n", (unsigned long long)t->del_mask);
     if (t->retrig) pos = appendf(buf, len, pos, "retrig=%llx\n", (unsigned long long)t->retrig);
     if (t->rseed) pos = appendf(buf, len, pos, "rseed=%u\n", (unsigned)t->rseed);
+    if (e1_dice_rolled(t))
+        pos = appendf(buf, len, pos, "dice=%u,%u,%u,%u,%u\n", (unsigned)t->dseed[0], (unsigned)t->dseed[1],
+                      (unsigned)t->dseed[2], (unsigned)t->dseed[3], (unsigned)t->dseed[4]);
+    if (t->dwas[0] || t->dwas[1] || t->dwas[2])
+        pos = appendf(buf, len, pos, "dicewas=%d,%d,%d\n", t->dwas[0], t->dwas[1], t->dwas[2]);
     for (int l = 0; l < E1_CC_LANES; l++) {
         pos = appendf(buf, len, pos, "ccn%d=%d\n", l + 1, t->cc_num[l]);
         if (t->cc_val[l] >= 0) pos = appendf(buf, len, pos, "cc%d=%d\n", l + 1, t->cc_val[l]);

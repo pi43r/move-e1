@@ -1472,6 +1472,145 @@ static void test_v04(void)
     free(e); free(c);
 }
 
+/* 0.4: dice lanes, Type, Density, auto roll. */
+static void test_dice(void)
+{
+    e1_engine_t *e = eng_new(), *e2 = eng_new(); cap_t *c = cap_new();
+    static non_t o[4096]; int n;
+    static char buf[16384];
+
+    /* Density: thins in a fixed order, the same every bar; strong beats stay longest */
+    setup(e); fresh(e, 0); S(e, 0, "pulses", "16");
+    CHECK(run_count(e, c, 0, 2) == 32);
+    S(e, 0, "density", "8");
+    CHECK(run_count(e, c, 0, 4) == 32 && bar_sig(c, 0) == bar_sig(c, 3));
+    CHECK(popcount64(e1_live_mask(e, 0, -1, 0)) == 8 && popcount64(e1_hit_mask(e, 0, -1, 0)) == 16);
+    S(e, 0, "density", "4");
+    CHECK(e1_live_mask(e, 0, -1, 0) == 0x1111ULL);
+    S(e, 0, "density", "1"); CHECK(e1_live_mask(e, 0, -1, 0) == 1ULL);
+    S(e, 0, "density", "0"); CHECK(run_count(e, c, 0, 2) == 0);
+    S(e, 0, "density", "8"); S(e, 0, "pulses", "5");
+    CHECK(popcount64(e1_live_mask(e, 0, -1, 0)) == 3);                  /* rounds up: 5 hits at half = 3 */
+    /* rolling Rhythm gives another order and thins a full track a little */
+    S(e, 0, "pulses", "16"); S(e, 0, "density", "16");
+    S(e, 0, "roll", "rhythm");
+    CHECK(e->t[0].v[E1_P_DENSITY] == 12 && e->t[0].dseed[E1_DICE_RHYTHM] != 0 && e1_dice_rolled(&e->t[0]) == (1 << E1_DICE_RHYTHM));
+    S(e, 0, "density", "4");
+    uint64_t m1 = e1_live_mask(e, 0, -1, 0);
+    CHECK(popcount64(m1) == 4 && m1 != 0x1111ULL);
+    CHECK(e->t[0].v[E1_P_STYLE] == 0 && e->t[0].v[E1_P_GROOVE] == 0);    /* the other layers stay plain */
+    S(e, 0, "cleardice", "rhythm");
+    CHECK(e1_live_mask(e, 0, -1, 0) == 0x1111ULL);
+    /* a CC track thins too */
+    setup(e); fresh(e, 12); S(e, 12, "type", "CC"); S(e, 12, "pulses", "16"); S(e, 12, "cc1", "40"); S(e, 12, "density", "4");
+    cap_clear(c); e1_start(e, 0); run(e, c, 0, 383, 1); e1_stop(e, emit, c);
+    CHECK(count_cc(c, 12, -1, 40) >= 4 && count_cc(c, 12, -1, 40) <= 5);
+    S(e, 12, "roll", "all");
+    CHECK(e1_dice_rolled(&e->t[12]) == (1 << E1_DICE_RHYTHM) && e->t[12].v[E1_P_STYLE] == 0);
+
+    /* Notes: one pool note per hit, the same line every bar, other layers untouched */
+    setup(e); fresh(e, 0); S(e, 0, "pulses", "16"); S(e, 0, "pool", "60,64,67"); S(e, 0, "dicetype", "1");
+    run_count(e, c, 0, 2); uint32_t plain = signature(c);
+    S(e, 0, "roll", "notes");
+    CHECK(e->t[0].v[E1_P_STYLE] == E1_STYLE_DICE && e->t[0].dwas[0] == 1 && e1_dice_active(e, 0) == 1);
+    CHECK(e->t[0].v[E1_P_GROOVE] == 0 && e->t[0].v[E1_P_PHRASE] == 0 && e->t[0].v[E1_P_DICELEN] == 0);
+    CHECK(run_count(e, c, 0, 4) == 64 && bar_sig(c, 0) == bar_sig(c, 3) && c->maxheld[0] == 1);
+    n = ons(c, 0, o, 4096);
+    int inpool = 1, kinds = 0, seen[128] = { 0 };
+    for (int i = 0; i < n; i++) {
+        int pc = o[i].note % 12;
+        if (pc != 0 && pc != 4 && pc != 7) inpool = 0;
+        if (!seen[o[i].note]++) kinds++;
+    }
+    CHECK(inpool && kinds >= 3);
+    uint32_t line1 = bar_sig(c, 0);
+    uint32_t seed1 = e->t[0].dseed[0];
+    S(e, 0, "roll", "accents");                                          /* another layer: the notes stay */
+    CHECK(e->t[0].dseed[0] == seed1 && e->t[0].v[E1_P_GROOVE] == E1_GROOVE_DICE && e->t[0].v[E1_P_ACCENT] == 60);
+    run_count(e, c, 0, 1); n = ons(c, 0, o, 4096);
+    int vk = 0, vs[128] = { 0 };
+    for (int i = 0; i < n; i++) if (!vs[o[i].vel]++) vk++;
+    CHECK(vk >= 2 && vk <= 3);
+    S(e, 0, "rollback", "1");
+    CHECK(e->t[0].v[E1_P_GROOVE] == 0 && e->t[0].dseed[1] == 0);
+    S(e, 0, "accent", "0");
+    run_count(e, c, 0, 1); CHECK(bar_sig(c, 0) == line1);
+    S(e, 0, "roll", "notes");                                            /* a new roll, then Back */
+    run_count(e, c, 0, 1); CHECK(bar_sig(c, 0) != line1 && e->t[0].dseed[0] != seed1);
+    S(e, 0, "rollback", "1");
+    run_count(e, c, 0, 1); CHECK(bar_sig(c, 0) == line1 && e->t[0].dseed[0] == seed1);
+    /* Type: high stays near the first note and says notes twice; same seed all along */
+    S(e, 0, "dicetype", "16");
+    run_count(e, c, 0, 1); n = ons(c, 0, o, 4096);
+    int roots = 0, reps = 0;
+    for (int i = 0; i < n; i++) { if (o[i].note == 60) roots++; if (i && o[i].note == o[i - 1].note) reps++; }
+    CHECK(n == 16 && roots >= 9 && reps >= 6 && bar_sig(c, 0) != line1 && e->t[0].dseed[0] == seed1);
+    S(e, 0, "dicetype", "1");
+    run_count(e, c, 0, 1); CHECK(bar_sig(c, 0) == line1);
+    /* one note in the pool: Dice plays around it in the scale */
+    S(e, 0, "pool", "60"); S(e, 0, "scale", "Minor"); S(e, 0, "dicetype", "8");
+    run_count(e, c, 0, 1); n = ons(c, 0, o, 4096);
+    int tri = 1; for (int i = 0; i < n; i++) { int pc = o[i].note % 12; if (pc != 0 && pc != 3 && pc != 7) tri = 0; }
+    CHECK(tri && n == 16);
+
+    /* saved: seeds and settings round-trip and play the same; undo is a dump too */
+    S(e, 0, "scale", "Chrom"); S(e, 0, "dicetype", "1"); S(e, 0, "pool", "60,64,67"); S(e, 0, "roll", "all"); S(e, 0, "density", "10"); S(e, 0, "autoroll", "Off");
+    CHECK(e1_dice_rolled(&e->t[0]) == 31 && e1_dice_active(e, 0) == 31 && e->t[0].v[E1_P_RANGE] > 0);
+    run_count(e, c, 0, 2); uint32_t all = signature(c);
+    e1_dump_track(e, 0, buf, sizeof buf);
+    CHECK(strstr(buf, "dice=") && strstr(buf, "style=Dice\n") && strstr(buf, "groove=Dice\n") && strstr(buf, "phrase=Dice\n") &&
+          strstr(buf, "dicelen=On\n") && strstr(buf, "density=10\n") && strstr(buf, "dicewas=1,1,1\n"));
+    setup(e2); e1_load_track(e2, 0, buf);
+    run_count(e2, c, 0, 2); CHECK(signature(c) == all && memcmp(e2->t[0].dseed, e->t[0].dseed, sizeof e->t[0].dseed) == 0);
+    /* octaves: jumps are whole octaves */
+    S(e, 0, "cleardice", "all"); S(e, 0, "density", "16"); S(e, 0, "accent", "0"); S(e, 0, "range", "0");
+    CHECK(e1_dice_rolled(&e->t[0]) == 0 && e1_dice_active(e, 0) == 0 && e->t[0].v[E1_P_STYLE] == 0);
+    run_count(e, c, 0, 2); CHECK(signature(c) == plain);                 /* cleared: plain again */
+    e1_dump_track(e, 0, buf, sizeof buf); CHECK(!strstr(buf, "dice=") && !strstr(buf, "dicewas="));
+    S(e, 0, "pool", "60"); S(e, 0, "scale", "Major"); S(e, 0, "roll", "octaves");
+    CHECK(e->t[0].v[E1_P_PHRASE] == E1_PHRASE_DICE && e->t[0].v[E1_P_RANGE] == 7);
+    run_count(e, c, 0, 1); n = ons(c, 0, o, 4096);
+    int octs = 1, up = 0; for (int i = 0; i < n; i++) { if (o[i].note != 60 && o[i].note != 72) octs = 0; if (o[i].note == 72) up++; }
+    CHECK(octs && up >= 2 && up <= 14);
+    S(e, 0, "phrase", "Saw");                                            /* another entry leaves dice for the layer */
+    CHECK(!(e1_dice_active(e, 0) & (1 << E1_DICE_OCTAVES)) && (e1_dice_rolled(&e->t[0]) & (1 << E1_DICE_OCTAVES)));
+    /* lengths: short, long and tied notes around Sustain */
+    setup(e); fresh(e, 0); S(e, 0, "pulses", "16"); S(e, 0, "roll", "lengths");
+    CHECK(e->t[0].v[E1_P_DICELEN] == 1);
+    cap_clear(c); e1_start(e, 0); run(e, c, 0, 383, 1);
+    double lens[4] = { 0 }; int nl = 0; double on_at = -1;
+    for (int i = 0; i < c->n; i++) {
+        const ev_t *v = &c->ev[i];
+        if ((v->st & 0xF0) == 0x90 && v->d2) on_at = v->at;
+        else if (on_at >= 0) {
+            double d = v->at - on_at; int k = 0;
+            while (k < nl && fabs(lens[k] - d) > 1.5) k++;
+            if (k == nl && nl < 4) lens[nl++] = d;
+        }
+    }
+    e1_stop(e, emit, c);
+    CHECK(nl >= 2 && balanced(c));
+
+    /* auto roll: new dice every N bars for the layers rolled by hand, and no others */
+    setup(e); fresh(e, 0); S(e, 0, "pulses", "16"); S(e, 0, "pool", "60,62,64,65,67,69"); S(e, 0, "dicetype", "1");
+    S(e, 0, "autoroll", "1");
+    run_count(e, c, 0, 4);
+    CHECK(e1_dice_rolled(&e->t[0]) == 0 && bar_sig(c, 0) == bar_sig(c, 1));   /* nothing rolled: nothing happens */
+    S(e, 0, "roll", "notes");
+    run_count(e, c, 0, 4);
+    CHECK(bar_sig(c, 0) != bar_sig(c, 1) && bar_sig(c, 1) != bar_sig(c, 2) && e1_dice_rolled(&e->t[0]) == 1);
+    S(e, 0, "autoroll", "2");
+    run_count(e, c, 0, 4);
+    CHECK(bar_sig(c, 0) == bar_sig(c, 1) && bar_sig(c, 2) == bar_sig(c, 3) && bar_sig(c, 1) != bar_sig(c, 2));
+    S(e, 0, "autoroll", "Off");
+    run_count(e, c, 0, 4);
+    CHECK(bar_sig(c, 0) == bar_sig(c, 3));
+    CHECK(e1_set(e, 0, "roll", "nonsense") == 0);
+    e1_load_track(e, 0, "pulses=4\n");                                   /* an old dump: everything plain */
+    CHECK(e->t[0].v[E1_P_DENSITY] == 16 && e->t[0].v[E1_P_AUTOROLL] == 0 && e1_dice_rolled(&e->t[0]) == 0);
+    free(e); free(e2); free(c);
+}
+
 static void run_probe(const char *name, const char *why)
 {
     fflush(stdout);
@@ -1517,6 +1656,7 @@ int main(int argc, char **argv)
     test_keys();
     test_fuzz();
     test_v04();
+    test_dice();
 
     /* BUG: parse_value computes cur + atoi(val + 1) in int: signed overflow. */
     run_probe("dplus", "\"d+2147483647\" overflows int in parse_value");

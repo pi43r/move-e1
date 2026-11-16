@@ -31,7 +31,7 @@ import {
 import {
     PERFORM, CLOCKS, DESTS, COL, BTN, STEP_BASE, GLOBAL_KEYS,
     valuesFrom, metaFor, ledFrame, pageOptions, drawLayer, LAYER_COL, currentPages, pageIndex, knobKeys,
-    padModel, padMode, padPages, padToTrack, padToSlot, trackName,
+    padModel, padMode, padPages, padToTrack, padToSlot, trackName, AUTOS,
     knobLeds, drawSelection, drawValueList, selectedKnob, drawCycleStrip,
 } from "./e1_view.mjs";
 import { createLibrary, createMenu, starterSet } from "./e1_library.mjs";
@@ -400,6 +400,25 @@ function stepLoop(d) {
     toast("LOOP", loopSay(next) + " " + who());
 }
 
+/* Dice: a new 16-step lane for one layer of the aimed tracks. The other
+ * layers stay. Delete + pad puts the layer back to plain. */
+function rollDice(layer, label) {
+    if (st.delHeld) { setTrack("cleardice", layer); toast("DICE OFF", label + " " + who()); return; }
+    setTrack("roll", layer);
+    toast("DICE", label + " " + who());
+}
+function diceBack() {
+    if (!st.snap || !(st.snap.dh | 0)) { toast("DICE", "NO EARLIER ROLL"); return; }
+    setTrack("rollback", "1");
+    toast("DICE", "BACK " + who());
+}
+function autoSay(v) { return v === "Off" ? "OFF" : v + (v === "1" ? " BAR" : " BARS"); }
+function setAuto(v) { setTrack("autoroll", v); toast("AUTO ROLL", autoSay(v) + " " + who()); }
+function stepAuto(d) {
+    const cur = Math.max(0, AUTOS.indexOf(st.values.autoroll));
+    setAuto(AUTOS[Math.max(0, Math.min(AUTOS.length - 1, cur + d))]);
+}
+
 function stopRepeats() {
     const m = aimMask();
     if (!st.snap || !((st.snap.rp | 0) & m)) return;
@@ -699,6 +718,9 @@ function onSlot(i, on, vel) {
     const act = padModel(st).pads[i].act;
     if (!act) return;
     switch (act.k) {
+    case "dice": rollDice(act.layer, act.label); break;
+    case "diceback": diceBack(); break;
+    case "autoroll": setAuto(act.value); break;
     case "set":
         if (GLOBAL_KEYS.has(act.key)) setGlobal(act.key, act.value);
         else setTrack(act.key, act.value);
@@ -917,7 +939,7 @@ function onCC(cc, v) {
     case CC.jogClick: if (st.randomHeld) reroll(); else goHome(); break;
     case CC.up: case CC.down: {
         const d = cc === CC.up ? 1 : -1;
-        if (st.randomHeld) { stepLoop(d); break; }
+        if (st.randomHeld) { if (st.shift) stepAuto(d); else stepLoop(d); break; }
         if (st.padKey === "pitch") { st.kbOct = Math.max(-2, Math.min(8, st.kbOct + d)); toast("NOTES", "OCTAVE " + st.kbOct); break; }
         const n = padPages(st.padKey);
         const p = Math.max(0, Math.min(n - 1, st.padPage + d));

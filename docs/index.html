@@ -435,11 +435,11 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
         <tbody>
           <tr><td>1</td><td>Steps</td><td>Loop length, 1 to 64 steps.</td><td>Fill: how many extra hits the track gets while the Fill perform pad is held.</td></tr>
           <tr><td>2</td><td>Pulses</td><td>Number of hits.</td><td>Rotate: shifts the hits along.</td></tr>
-          <tr><td>3</td><td>Cycles</td><td>How many cycles the track plays in turn, 1 to 16.</td><td></td></tr>
-          <tr><td>4</td><td>Div</td><td>Step length: straight, triplet or dotted.</td><td></td></tr>
+          <tr><td>3</td><td>Cycles</td><td>How many cycles the track plays in turn, 1 to 16.</td><td>DiceTyp: the kind of line the Notes dice make, 1 to 16. Low is wide, high is tight.</td></tr>
+          <tr><td>4</td><td>Div</td><td>Step length: straight, triplet or dotted.</td><td>Density: how many of the hits sound, 16 is all of them.</td></tr>
           <tr><td>5</td><td>Repeats</td><td>Repeats after each hit, 0 to 48, or INF until the next hit.</td><td>Ramp: velocity change per repeat.</td></tr>
           <tr><td>6</td><td>Time</td><td>Gap between repeats.</td><td>Pace: gaps grow or shrink.</td></tr>
-          <tr><td>7</td><td>Voicing</td><td>Inverts the chord or adds octaves.</td><td>Style: PolyFix, PolyRamp, PolyClimb, MonoFix, MonoRamp, MonoClimb.</td></tr>
+          <tr><td>7</td><td>Voicing</td><td>Inverts the chord or adds octaves.</td><td>Style: PolyFix, PolyRamp, PolyClimb, MonoFix, MonoRamp, MonoClimb, Dice.</td></tr>
           <tr><td>8</td><td>Range</td><td>How far Phrase moves the pitch, in scale steps.</td><td>Phrase: the shape of that movement.</td></tr>
         </tbody>
       </table>
@@ -472,10 +472,10 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
           <tr><td>2</td><td>Clock</td><td>Move, Internal or Computer.</td><td>Rate: how often random values change.</td></tr>
           <tr><td>3</td><td>Tempo</td><td>Internal tempo, 20 to 300 BPM.</td><td>Grid: swing on single steps, pairs or fours.</td></tr>
           <tr><td>4</td><td>ClkOut</td><td>Send MIDI clock to the computer.</td><td>Loop: Free, or 1, 2, 4 or 8 bars after which chance and random values repeat.</td></tr>
-          <tr><td>5</td><td>Quant</td><td>When a queued pattern starts.</td><td></td></tr>
+          <tr><td>5</td><td>Quant</td><td>When a queued pattern starts.</td><td>AutoRol: Off, or new dice every 1, 2, 4 or 8 bars.</td></tr>
           <tr><td>6</td><td>Type</td><td>Note or CC track.</td><td>Mute</td></tr>
           <tr><td>7</td><td>Repeat</td><td>Choke: a new hit cuts the last one. Tail: they overlap.</td><td>Dir: Mono styles play up or down.</td></tr>
-          <tr><td>8</td><td>PhrRate</td><td>Phrase length: x1 is 4 bars, x2 is 2, /2 is 8.</td><td></td></tr>
+          <tr><td>8</td><td>PhrRate</td><td>Phrase length: x1 is 4 bars, x2 is 2, /2 is 8.</td><td>DiceLen: the Lengths dice, On or Off.</td></tr>
         </tbody>
       </table>
     </div>
@@ -492,7 +492,8 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
           <tr><td>Div, Time</td><td>Upper row: 1/1 to 1/64 and 1/4 dotted. Lower row: dotted 1/8 and 1/16, then triplets.</td></tr>
           <tr><td>Pitch</td><td>A one-octave keyboard, black keys above. Tap a key to add it to the pool or take it out. <kbd>Shift</kbd> + key only plays it. The end pads change octave and light up when the pool has notes that way. The footer shows the octave and the pool notes in it. Up to 8 notes.</td></tr>
           <tr><td>Root</td><td>The same keyboard. Tap the root.</td></tr>
-          <tr><td>Style, Phrase, Groove</td><td>One pad per shape. The end pads set Dir or PhrRate.</td></tr>
+          <tr><td>Style, Phrase, Groove</td><td>One pad per shape. The purple pad is Dice. The end pads set Dir or PhrRate.</td></tr>
+          <tr><td>Density</td><td>Pads 1 to 16. Hits that Density takes out stay dim on the step row.</td></tr>
           <tr><td>Repeats</td><td>14 counts per page. Upper right: Choke or Tail. Lower right: INF. <kbd>Delete</kbd> lights up while repeats run. Press it to stop them. The next hit starts new ones.</td></tr>
           <tr><td>Length</td><td>One pad per length. Lower right, pink: jump to a random start point. A tap on <kbd>Delete</kbd> does the same. <kbd>Shift</kbd> + the pink pad puts the track back in line with the bar.</td></tr>
           <tr><td>Rate, Loop</td><td>One pad per value. Lower right, pink: new dice for the track.</td></tr>
@@ -568,6 +569,38 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
       <li>The pink pad at the lower right of the Loop and Rate pads rolls new dice too.</li>
       <li>Loop is also on the Settings page: <kbd>Shift</kbd> + knob 4.</li>
     </ul>
+    <h3>Dice</h3>
+    <p>Dice write a new 16-step line for one part of a note track and leave the other parts alone. Hold <kbd>Random</kbd>, or press it twice to latch it, and take your fingers off the knobs. The upper row of the bottom pads becomes the dice.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Pad</th><th>Colour</th><th>What it rolls</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>Orange</td><td>Notes: which note of the pool each step plays. Style changes to Dice.</td></tr>
+          <tr><td>2</td><td>Red</td><td>Accents: strong, plain and soft steps. Groove changes to Dice. Accent sets how strong.</td></tr>
+          <tr><td>3</td><td>Green</td><td>Lengths: short, medium, long and tied notes around Sustain. DiceLen turns On.</td></tr>
+          <tr><td>4</td><td>Blue</td><td>Octaves: octave jumps inside Range. Phrase changes to Dice.</td></tr>
+          <tr><td>5</td><td>Cyan</td><td>Rhythm: which hits Density takes out.</td></tr>
+          <tr><td>7</td><td>Purple</td><td>All five at once.</td></tr>
+          <tr><td>8</td><td>Pink</td><td>Back: the roll before this one, up to four rolls back.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <ul>
+      <li>A pad is bright while its line plays and dim while it does not. The screen names the line you rolled.</li>
+      <li>Each line repeats every 16 steps. Mark a retrigger step and the lines start again there.</li>
+      <li>Choose another Style, Groove or Phrase and that part plays as before. Choose Dice in the list to bring the line back.</li>
+      <li>With <kbd>Random</kbd> latched, hold <kbd>Delete</kbd> and press a dice pad to clear that line. <kbd>Delete</kbd> + pad 7 clears all of them.</li>
+      <li>Rolling Accents with Accent at 0 sets Accent to 60. Rolling Octaves with Range at 0 sets Range to one octave. Rolling Rhythm with Density at 16 sets Density to 12.</li>
+      <li>With one note in the pool, the Notes dice play that note and the two scale notes above it. Voicing adds more notes.</li>
+      <li>On a CC track only Rhythm, All and Back work.</li>
+      <li>Hold track pads first to roll for several tracks at once.</li>
+    </ul>
+    <h3>Dice type</h3>
+    <p><kbd>Shift</kbd> + knob 3 on the Left page (DiceTyp) shapes the Notes line, 1 to 16. Low values jump across the whole pool and across octaves. High values stay near the lowest note and repeat notes. Turning it changes the line you rolled step by step. It does not roll a new one.</p>
+    <h3>Density</h3>
+    <p><kbd>Shift</kbd> + knob 4 on the Left page (Density) sets how many of a track's hits sound. 16 plays them all, 8 plays half, 0 plays none. The same hits drop out every time round, the weakest beats first. Roll Rhythm to choose another order. Density works on drum and CC tracks too, and Fill still adds its hits.</p>
+    <h3>Auto roll</h3>
+    <p>Auto roll rolls new dice by itself. Hold <kbd>Random</kbd> and tap a pad in the lower row: Off, 1, 2, 4 or 8 bars. <kbd>Shift</kbd> + <kbd>Random</kbd> + Plus or Minus steps through the same values. Only lines you rolled by hand at least once get new dice. The footer shows AUTO while <kbd>Random</kbd> is held. The pink pad at the lower right rolls the track's random values, as <kbd>Random</kbd> + jog click does.</p>
   </section>
 
   <section id="perform">

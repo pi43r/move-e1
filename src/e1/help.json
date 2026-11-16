@@ -249,6 +249,31 @@
       ]
     },
     {
+      "title": "Dice",
+      "lines": [
+        "Hold Random, hands",
+        " off the knobs. The",
+        " upper pads roll a",
+        " new 16-step line:",
+        "1 Notes  2 Accents",
+        "3 Lengths 4 Octaves",
+        "5 Rhythm  7 All",
+        "8 Back: last roll.",
+        "Bright: line plays.",
+        "Delete+pad: clear.",
+        "Lower pads: auto",
+        " roll Off, 1, 2, 4,",
+        " 8 bars. Also Shift",
+        " +Random and +/-.",
+        "Shift+knob 3 Left:",
+        " dice type. Low is",
+        " wide, high tight.",
+        "Shift+knob 4 Left:",
+        " density, how many",
+        " hits sound."
+      ]
+    },
+    {
       "title": "Play and clock",
       "lines": [
         "Play: start/stop.",

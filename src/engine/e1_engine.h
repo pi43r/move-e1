@@ -57,6 +57,7 @@ enum {
     E1_P_ACCENT, E1_P_GROOVE, E1_P_TIMING, E1_P_SWINGGRID, E1_P_RANDOM, E1_P_RATE,
     E1_P_CHANNEL, E1_P_OUTPUT, E1_P_MUTE, E1_P_DIR, E1_P_TAIL, E1_P_PHRASERATE,
     E1_P_CCMODE, E1_P_SLEW, E1_P_LOOP,
+    E1_P_DENSITY, E1_P_DICETYPE, E1_P_AUTOROLL, E1_P_DICELEN,
     E1_NP
 };
 
@@ -67,6 +68,18 @@ extern const int e1_division_ticks[E1_DIVISIONS];
 extern const int e1_length_bars[E1_LENGTHS];   /* 0 = off (free-running) */
 #define E1_LOOPS 5
 extern const int e1_loop_bars[E1_LOOPS];       /* Loop lock: 0 = free, else bars */
+
+/* Dice: five lanes of 16 steps, each made from its own seed. A lane that
+ * was never rolled has seed 0. Notes plays when Style is Dice, Accents when
+ * Groove is Dice, Octaves when Phrase is Dice, Lengths when DiceLen is On;
+ * Rhythm is the order in which Density takes hits away. */
+enum { E1_DICE_NOTES = 0, E1_DICE_ACCENTS, E1_DICE_LENGTHS, E1_DICE_OCTAVES, E1_DICE_RHYTHM, E1_DICE_LAYERS };
+#define E1_STYLE_DICE   6
+#define E1_GROOVE_DICE  8
+#define E1_PHRASE_DICE  8
+#define E1_DICE_HISTORY 4
+
+typedef struct { uint32_t seed[E1_DICE_LAYERS]; uint8_t style, groove, phrase, dlen; } e1_dice_snap_t;
 
 typedef struct { uint8_t on, note, ch, ports; double off; } e1_voice_t;
 
@@ -79,6 +92,7 @@ typedef struct {
     double  len;           /* note length in engine ticks */
     int     vel, ramp;     /* start velocity and change per repeat */
     int     cyc, step, pidx;
+    int     dpos;          /* dice lane step at the pulse */
     int     shift;         /* phrase shift in scale degrees at the pulse */
     int     ridx;          /* random step at the pulse */
     int     prob;          /* per-note drop chance, 0..100 */
@@ -96,6 +110,8 @@ typedef struct {
     uint64_t cadd[E1_CYCLES], cdel[E1_CYCLES]; /* hand edits in one cycle */
     uint64_t retrig;                           /* steps that restart random, groove, phrase and style */
     uint32_t rseed;                            /* the track's own dice; 0 = the set's seed alone */
+    uint32_t dseed[E1_DICE_LAYERS];            /* dice lanes; 0 = never rolled */
+    uint8_t  dwas[3];                          /* style, groove, phrase + 1 from before their dice */
     uint8_t  pool[E1_POOL];                    /* MIDI notes, ascending */
     uint8_t  pool_n;
     int16_t  cc_val[E1_CC_LANES];              /* -1 = lane off */
@@ -128,6 +144,9 @@ typedef struct {
     int64_t  fz_span, fz_dt, fz_j;
     int64_t  rt_T;         /* track time of the last retrigger step played */
     uint8_t  aud_n, aud_ch, aud_ports, aud_note[E1_POOL];   /* notes held by an audition */
+    int64_t  ar_idx;       /* auto roll period last seen */
+    uint8_t  dhist_n;      /* earlier rolls kept for Back */
+    e1_dice_snap_t dhist[E1_DICE_HISTORY];
 } e1_track_t;
 
 #define E1_TRACK_STORED_BYTES offsetof(e1_track_t, cursor)
@@ -176,6 +195,11 @@ void e1_resync(e1_engine_t *e, int track);
 
 /* Hits of one cycle as a bit mask, bit i = step i. */
 uint64_t e1_hit_mask(const e1_engine_t *e, int track, int cycle, int fill);
+/* The hits Density leaves sounding. */
+uint64_t e1_live_mask(const e1_engine_t *e, int track, int cycle, int fill);
+/* Bit per E1_DICE_* layer: rolled at least once / playing now. */
+int  e1_dice_rolled(const e1_track_t *t);
+int  e1_dice_active(const e1_engine_t *e, int track);
 int  e1_steps(const e1_engine_t *e, int track, int cycle);
 /* The cycle the UI should show: the one being edited, else the one playing. */
 int  e1_display_cycle(const e1_track_t *t);
@@ -200,6 +224,9 @@ int  e1_ports(const e1_engine_t *e, const e1_track_t *t);
  *   clearcycle       N; copycycle "A B"; clearparam <param>; clearrandom
  *   retrig           hex mask of retrigger steps; retrigtoggle = one step
  *   rseed            the track's own random seed (a new one re-rolls it)
+ *   roll             notes | accents | lengths | octaves | rhythm | all: a new lane
+ *   rollback         the roll before this one; cleardice <layer | all>
+ *   dice             the five lane seeds, comma list (used by save files)
  *   name
  * Returns 1 when the key was recognised. */
 int  e1_set(e1_engine_t *e, int track, const char *key, const char *val);

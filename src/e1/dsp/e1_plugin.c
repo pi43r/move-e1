@@ -511,6 +511,8 @@ static int json_ui(e1_inst_t *s, char *buf, int len)
         (unsigned)flash, (unsigned)mute, (unsigned)type, (unsigned)(s->q_move.dropped + s->q_comp.dropped));
     PUT("\"pf\":%u,\"tmp\":%d,\"q\":%d,\"wq\":%d,\"wr\":%u,", (unsigned)pf, s->temp_on, s->commit, s->wq_n, (unsigned)s->web_rev);
     PUT("\"rp\":%u,\"rt\":\"%llx\",", (unsigned)rp, (unsigned long long)f->retrig);
+    PUT("\"dc\":%d,\"dm\":%d,\"dh\":%d,\"lv\":\"%llx\",", e1_dice_rolled(f), e1_dice_active(&s->e, s->focus), f->dhist_n,
+        (unsigned long long)e1_live_mask(&s->e, s->focus, f->edit_mask || s->e.running ? dc : -1, f->p_fill));
     PUT("\"cy\":%d,\"pc\":%d,\"ce\":%u,\"em\":%u,\"sn\":%d,", dc, f->cur_cycle, (unsigned)e1_cycles_edited(f),
         (unsigned)f->edit_mask, e1_steps(&s->e, s->focus, f->edit_mask ? dc : -1));
     PUT("\"st\":[");
