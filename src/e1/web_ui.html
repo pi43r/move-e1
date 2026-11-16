@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>E-1</title>
+<style>
+:root {
+  --bg: #dcd9d3; --slab: #e6e3de; --ink: #262624; --muted: #5d5b56; --rule: #9a978f;
+  --note: #c8662f; --cc: #2f8f95; --field: #f2f0ec;
+  font: 15px/1.45 "Helvetica Neue", Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #262624; --slab: #2f2e2b; --ink: #d9d6d0; --muted: #a9a59e; --rule: #55534e; --field: #1e1e1c; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 16px; background: var(--bg); color: var(--ink); }
+main { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
+h1 { margin: 0; font-size: 1.6rem; }
+h2 { margin: 0 0 8px; font-size: 1rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+section { border: 1px solid var(--rule); background: var(--slab); padding: 14px 16px; }
+.hint { color: var(--muted); font-size: .88rem; margin: 0 0 10px; }
+.status { font: 500 .8rem ui-monospace, Menlo, monospace; color: var(--muted); }
+input, select { font: inherit; color: var(--ink); background: var(--field); border: 1px solid var(--rule); padding: 4px 6px; border-radius: 0; min-width: 0; }
+input:focus, select:focus { outline: 2px solid var(--ink); outline-offset: -1px; }
+.grid { display: grid; gap: 6px; }
+.row { display: grid; grid-template-columns: 2.4rem minmax(7rem, 1fr) 5rem 4.2rem 6.6rem 4.4rem 2.6rem; gap: 6px; align-items: center; }
+.row.head { font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.num { font: 600 .9rem ui-monospace, Menlo, monospace; padding-left: 6px; border-left: 4px solid var(--note); }
+.num.cc { border-left-color: var(--cc); }
+.mute { justify-self: start; }
+button { font: inherit; color: var(--ink); background: var(--field); border: 1px solid var(--rule); padding: 3px 8px; cursor: pointer; }
+button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.ccs { grid-column: 2 / -1; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px; padding: 4px 0 8px; }
+.ccs label { display: grid; font-size: .7rem; color: var(--muted); }
+.ccs input { width: 100%; }
+.pats { display: grid; grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); gap: 6px; }
+.pats label { display: grid; grid-template-columns: 2.4rem 1fr; gap: 6px; align-items: center; font: 600 .85rem ui-monospace, Menlo, monospace; }
+.pats input:disabled { opacity: .45; }
+@media (max-width: 640px) {
+  .row { grid-template-columns: 2.2rem 1fr 4.6rem 3.8rem; }
+  .row .out, .row .mute, .row.head .out, .row.head .mute { display: none; }
+  .ccs { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>E-1</h1>
+    <div class="status" id="status">Waiting for E-1…</div>
+  </header>
+
+  <section>
+    <h2>Set and patterns</h2>
+    <p class="hint">Names change on the Move as soon as you leave a field. Empty slots get a name once a pattern is saved there.</p>
+    <div class="grid" style="margin-bottom:10px">
+      <label class="pats" style="grid-template-columns:2.4rem minmax(0,22rem)"><span>SET</span><input id="set_name" maxlength="24"></label>
+    </div>
+    <div class="pats" id="pats"></div>
+  </section>
+
+  <section>
+    <h2>Tracks</h2>
+    <p class="hint">CC tracks show their 16 CC numbers below the track. Lanes 1 to 8 are knobs on page CC A, lanes 9 to 16 on CC B.</p>
+    <div class="grid" id="tracks">
+      <div class="row head"><span></span><span>Name</span><span>Type</span><span>Chan</span><span class="out">Output</span><span class="mute">Mute</span><span></span></div>
+    </div>
+  </section>
+</main>
+
+<script src="/static/schwung-remote-api.js"></script>
+<script>
+"use strict";
+if (!window.schwungRemote) {                       /* preview outside Schwung */
+  const store = {};
+  window.schwungRemote = { getParam: (k) => Promise.resolve(store[k]), setParam: (k, v) => { store[k] = String(v); }, onParamChange: () => {} };
+}
+const R = window.schwungRemote;
+const P = "overtake_dsp:";
+const OUTS = ["Global", "Move", "Computer", "Both"];
+const fields = {};                                   /* state key -> apply(value) */
+const send = (k, v) => R.setParam(P + "w:" + k, String(v));
+
+function el(tag, attrs, kids) {
+  const e = document.createElement(tag);
+  for (const k in attrs || {}) { if (k === "text") e.textContent = attrs[k]; else e.setAttribute(k, attrs[k]); }
+  for (const c of kids || []) e.appendChild(c);
+  return e;
+}
+/* A text or number field that sends on change and is not overwritten while you type in it. */
+function bind(input, key, onCommit) {
+  input.addEventListener("change", () => onCommit(input.value));
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") input.blur(); });
+  fields[key] = (v) => { if (document.activeElement !== input) input.value = v; };
+}
+
+/* Set and patterns */
+bind(document.getElementById("set_name"), "set_name", (v) => { if (v.trim()) send("sname", v.trim()); });
+const pats = document.getElementById("pats");
+for (let i = 1; i <= 16; i++) {
+  const inp = el("input", { maxlength: "12", disabled: "" });
+  pats.appendChild(el("label", {}, [el("span", { text: "P" + i }), inp]));
+  bind(inp, "p" + i + "_name", (v) => send("pname", i + " " + v.trim()));
+  fields["p" + i + "_used"] = (v) => { inp.disabled = v !== "1"; inp.placeholder = v === "1" ? "" : "empty"; };
+}
+
+/* Tracks */
+const tracks = document.getElementById("tracks");
+for (let t = 1; t <= 16; t++) {
+  const num = el("span", { class: "num", text: String(t) });
+  const name = el("input", { maxlength: "12", "aria-label": "Track " + t + " name" });
+  const type = el("select", { "aria-label": "Track " + t + " type" }, ["Note", "CC"].map((n, i) => el("option", { value: n, text: n })));
+  const ch = el("select", { "aria-label": "Track " + t + " channel" }, Array.from({ length: 16 }, (_, i) => el("option", { value: String(i + 1), text: String(i + 1) })));
+  const out = el("select", { class: "out", "aria-label": "Track " + t + " output" }, OUTS.map((n) => el("option", { value: n, text: n })));
+  const mute = el("button", { class: "mute", type: "button", "aria-pressed": "false", text: "M" });
+  const more = el("button", { type: "button", "aria-expanded": "false", title: "CC numbers", text: "CC" });
+  const ccs = el("div", { class: "ccs", hidden: "" });
+  const ccIn = [];
+  for (let l = 0; l < 16; l++) {
+    const inp = el("input", { type: "number", min: "0", max: "127", inputmode: "numeric" });
+    inp.addEventListener("change", () => { const n = Math.max(0, Math.min(127, parseInt(inp.value, 10) || 0)); inp.value = n; send("t" + t + ":ccn" + (l + 1), n); });
+    ccIn.push(inp);
+    ccs.appendChild(el("label", {}, [document.createTextNode("Lane " + (l + 1)), inp]));
+  }
+  tracks.appendChild(el("div", { class: "row" }, [num, name, type, ch, out, mute, more]));
+  tracks.appendChild(ccs);
+
+  bind(name, "t" + t + "_name", (v) => send("t" + t + ":name", v.trim().toUpperCase()));
+  type.addEventListener("change", () => send("t" + t + ":type", type.value));
+  ch.addEventListener("change", () => send("t" + t + ":channel", ch.value));
+  out.addEventListener("change", () => send("t" + t + ":output", out.value));
+  mute.addEventListener("click", () => send("t" + t + ":mute", mute.getAttribute("aria-pressed") === "true" ? "Off" : "On"));
+  more.addEventListener("click", () => { const open = ccs.hidden; ccs.hidden = !open; more.setAttribute("aria-expanded", String(open)); });
+
+  fields["t" + t + "_type"] = (v) => {
+    const cc = v === "1";
+    type.value = cc ? "CC" : "Note";
+    num.classList.toggle("cc", cc);
+    more.disabled = !cc;
+    if (!cc) { ccs.hidden = true; more.setAttribute("aria-expanded", "false"); }
+  };
+  fields["t" + t + "_ch"] = (v) => { if (document.activeElement !== ch) ch.value = v; };
+  fields["t" + t + "_out"] = (v) => { if (document.activeElement !== out) out.value = OUTS[parseInt(v, 10) || 0]; };
+  fields["t" + t + "_mute"] = (v) => mute.setAttribute("aria-pressed", String(v === "1"));
+  fields["t" + t + "_ccn"] = (v) => String(v).split(",").forEach((n, l) => { if (ccIn[l] && document.activeElement !== ccIn[l]) ccIn[l].value = n; });
+}
+
+/* Live values from E-1 */
+const status = document.getElementById("status");
+function apply(params) {
+  let seen = false;
+  for (const k in params) {
+    if (!k.startsWith(P)) continue;
+    const f = fields[k.slice(P.length)];
+    if (f) { f(params[k]); seen = true; }
+  }
+  if (seen) status.textContent = "Connected to E-1";
+}
+R.onParamChange(apply);
+for (const k in fields) R.getParam(P + k).then((v) => { if (v !== undefined && v !== null) apply({ [P + k]: v }); });
+</script>
+</body>
+</html>

@@ -17,7 +17,7 @@ ENGINE=src/engine/e1_engine.c
 rm -rf dist && mkdir -p dist/e1
 
 $CC $CFLAGS src/e1/dsp/e1_plugin.c $ENGINE -o dist/e1/dsp.so -lm
-cp src/e1/module.json src/e1/help.json dist/e1/
+cp src/e1/module.json src/e1/help.json src/e1/web_ui.html dist/e1/
 # Schwung reloads ui.js on every launch but keeps imported files cached by
 # path until it restarts. Name the helpers after their content, so an update
 # installed while Schwung is running never pairs a new ui.js with old helpers.

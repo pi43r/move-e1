@@ -120,7 +120,7 @@ pre code { overflow-wrap: normal; }
 <body>
 <main>
   <header>
-    <div class="label">Schwung tool for Ableton Move · build 0.3.6</div>
+    <div class="label">Schwung tool for Ableton Move · build 0.3.7</div>
     <h1>Move E-1</h1>
     <p class="lead">E-1 is a 16-track Euclidean sequencer for Ableton Move. It runs under Schwung and plays Move's own tracks, a computer over USB-C, or both.</p>
   </header>
@@ -141,6 +141,7 @@ pre code { overflow-wrap: normal; }
       <li><a href="#perform">Perform, Freeze, Temp</a></li>
       <li><a href="#patterns">Patterns, sets, menu</a></li>
       <li><a href="#connect">Move or computer</a></li>
+      <li><a href="#web">Web page</a></li>
       <li><a href="#saving">Saving and undo</a></li>
     </ol>
   </nav>
@@ -613,6 +614,17 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
     <p>Choosing an output also sets a matching clock. Changing the clock stops playback.</p>
   </section>
 
+  <section id="web">
+    <h2>Web page</h2>
+    <p>With E-1 open, browse to <code>http://move.local</code> on a computer or phone on the same network and open the Tool tab. The page shows:</p>
+    <ul>
+      <li>The set name and the names of the saved patterns.</li>
+      <li>For each track: name, type, channel, output and mute.</li>
+      <li>For CC tracks, the CC number of each of the 16 lanes (button CC).</li>
+    </ul>
+    <p>A change reaches the Move as soon as you leave the field. Changes made on the Move show up on the page.</p>
+  </section>
+
   <section id="saving">
     <h2>Saving and undo</h2>
     <p>E-1 keeps the live state and comes back to it next time. A set file changes only when you save it. Files are in <code>/data/UserData/schwung/e1/</code>.</p>
@@ -621,7 +633,7 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
   </section>
 
   <footer>
-    <p>Move E-1 build 0.3.6. Inspired by the Torso T-1. Runs on <a href="https://github.com/charlesvestal/schwung">Schwung</a>. <a href="https://github.com/pi43r/move-e1">Source</a>, MIT licence.</p>
+    <p>Move E-1 build 0.3.7. Inspired by the Torso T-1. Runs on <a href="https://github.com/charlesvestal/schwung">Schwung</a>. <a href="https://github.com/pi43r/move-e1">Source</a>, MIT licence.</p>
   </footer>
 </main>
 </body>

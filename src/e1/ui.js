@@ -108,7 +108,49 @@ function poll() {
     if (st.queued >= 0 && !(snap.q | 0)) {          /* the queued pattern landed */
         st.current = st.queued; st.queued = -1; sessionDirty = true; edited();
     }
+    if ((snap.wr | 0) !== lastWebRev) { if (lastWebRev >= 0) edited(); lastWebRev = snap.wr | 0; }
+    if (snap.wq | 0) takeWebRequests();
     dirty = true;
+}
+
+/* ------------------------------------------------------------ web page */
+/* Schwung's Tool tab shows web_ui.html. Track edits go straight to the DSP.
+ * Set and pattern names live here, so they are handed to the DSP for the page
+ * to read, and renames from the page are collected from a small queue. */
+let lastWebRev = -1, lastNames = "";
+
+function pushNames() {
+    let f = "\"set_name\":" + JSON.stringify(String(st.setName || ""));
+    for (let i = 0; i < 16; i++) {
+        const p = st.patterns[i];
+        f += ",\"p" + (i + 1) + "_name\":" + JSON.stringify(p ? String(p.name || "") : "") + ",\"p" + (i + 1) + "_used\":\"" + (p ? 1 : 0) + "\"";
+    }
+    if (f === lastNames) return;
+    lastNames = f;
+    setP("uinames", f);
+}
+
+function takeWebRequests() {
+    for (let n = 0; n < 8; n++) {
+        const r = getP("webreq");
+        if (!r) break;
+        const sp = r.indexOf(" ");
+        const kind = sp < 0 ? r : r.slice(0, sp), arg = sp < 0 ? "" : r.slice(sp + 1);
+        if (kind === "sname") {
+            const name = arg.trim().slice(0, 24);
+            if (!name) continue;
+            if (st.setId) lib.renameSet(st.setId, name);
+            st.setName = name; sessionDirty = true;
+            toast("SET", name);
+        } else if (kind === "pname") {
+            const m = /^(\d+) ?(.*)$/.exec(arg);
+            const i = m ? parseInt(m[1], 10) - 1 : -1;
+            if (i < 0 || i > 15 || !st.patterns[i]) continue;
+            st.patterns[i].name = m[2].trim().slice(0, 12);
+            st.dirty = true; sessionDirty = true;
+            toast("P" + (i + 1), st.patterns[i].name || "NO NAME");
+        }
+    }
 }
 
 function toast(tag, text) {
@@ -1112,6 +1154,7 @@ globalThis.tick = function () {
     frame++;
     st.now = Date.now();
     poll();
+    if ((frame % 20) === 0) pushNames();
     saveStep();
     /* Parked behind another screen: keep state and saving going, draw nothing. */
     if (globalThis.overtakeParked) return;

@@ -2,7 +2,7 @@
 
 ## Hardware tests
 
-Run these on a Move with build 0.3.6. Tick each one that works.
+Run these on a Move with build 0.3.7. Tick each one that works.
 
 **Loading and switching**
 - [ ] E-1 opens from Tools after installing over a running Schwung.
@@ -41,6 +41,13 @@ Run these on a Move with build 0.3.6. Tick each one that works.
 - [ ] Pattern + pad queues on Quant, a second tap switches at once.
 - [ ] Menu: Save, Save as, Load, Rename, Settings all work. Delete + click in Load deletes a set.
 
+**Web page**
+- [ ] With E-1 open, move.local shows E-1 in the Tool tab.
+- [ ] Track name, type, channel, output and mute changes reach the Move and stay after a restart.
+- [ ] CC lane numbers change what a CC track sends.
+- [ ] Set and pattern names change on the Move and are kept when the set is saved.
+- [ ] Edits on the Move show up on the page.
+
 **Outputs and clock**
 - [ ] Output Move plays Move's tracks on channels 1 to 4.
 - [ ] Output Computer reaches a DAW over USB-C.
@@ -53,9 +60,11 @@ Run these on a Move with build 0.3.6. Tick each one that works.
 - [ ] Free division (Shift + Div in fine steps).
 - [ ] Track presets (removed from the menu in 0.3.3).
 - [ ] Incoming MIDI notes: record into the pool or transpose.
+- [ ] Web page: edit every knob value for a track, and load or save sets.
+- [ ] Map an external controller's CCs to E-1 parameters (to be decided).
 
 ## Other
 
 - [ ] Turn on GitHub Pages: Settings, Pages, Deploy from branch, `main`, folder `/docs`.
-- [ ] Tag the first release (`v0.3.6`) so the Releases link works.
+- [ ] Tag the first release (`v0.3.7`) so the Releases link works.
 - [ ] Submit E-1 to the Schwung catalog once the hardware tests pass.

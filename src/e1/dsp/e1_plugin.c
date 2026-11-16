@@ -65,6 +65,15 @@ typedef struct {
     /* Temp: saved fields of every track while the Temp button is held */
     e1_track_t temp_bak[E1_TRACKS];
     int temp_on;
+
+    /* Web page (Schwung's Tool tab). Track edits from the page come in as
+     * "w:tN:key" and bump web_rev so ui.js saves them. Set and pattern names
+     * live in ui.js: it hands them over as a flat JSON fragment, and renames
+     * from the page wait in webq until ui.js collects them. */
+    uint32_t rev, web_rev;
+    char names[1600];
+    char webq[8][64];
+    int wq_head, wq_n;
 } e1_inst_t;
 
 static const char *const QUANT_NAMES[] = { "1/4", "1/2", "1 bar", "2 bars", "4 bars", "8 bars" };
@@ -353,6 +362,24 @@ static void e1_set_param(void *inst, const char *key, const char *val)
 {
     e1_inst_t *s = (e1_inst_t *)inst;
     if (!s || !key || !val) return;
+    s->rev++;
+    if (key[0] == 'w' && key[1] == ':') {
+        const char *k = key + 2;
+        if (!strcmp(k, "pname") || !strcmp(k, "sname")) {
+            if (s->wq_n < 8) {
+                snprintf(s->webq[(s->wq_head + s->wq_n) % 8], sizeof s->webq[0], "%s %s", k, val);
+                s->wq_n++;
+            }
+            return;
+        }
+        const char *r2 = NULL;
+        int wt = parse_track_key(k, &r2);
+        if (wt < 0) return;                       /* the page reaches tracks only */
+        e1_set_param(inst, k, val);
+        s->web_rev++;
+        return;
+    }
+    if (strcmp(key, "uinames") == 0) { snprintf(s->names, sizeof s->names, "%s", val); return; }
     const char *rest = NULL;
     int t = parse_track_key(key, &rest);
     if (t >= 0) {
@@ -475,7 +502,7 @@ static int json_ui(e1_inst_t *s, char *buf, int len)
     PUT("{\"r\":%d,\"ck\":%d,\"bpm\":%.1f,\"d\":%d,\"co\":%d,\"qn\":%d,\"f\":%d,\"fl\":%u,\"mu\":%u,\"ty\":%u,\"dr\":%u,",
         s->e.running, s->clock, (double)s->bpm, s->e.dest, s->clock_out, s->quant, s->focus + 1,
         (unsigned)flash, (unsigned)mute, (unsigned)type, (unsigned)(s->q_move.dropped + s->q_comp.dropped));
-    PUT("\"pf\":%u,\"tmp\":%d,\"q\":%d,", (unsigned)pf, s->temp_on, s->commit);
+    PUT("\"pf\":%u,\"tmp\":%d,\"q\":%d,\"wq\":%d,\"wr\":%u,", (unsigned)pf, s->temp_on, s->commit, s->wq_n, (unsigned)s->web_rev);
     PUT("\"cy\":%d,\"pc\":%d,\"ce\":%u,\"em\":%u,\"sn\":%d,", dc, f->cur_cycle, (unsigned)e1_cycles_edited(f),
         (unsigned)f->edit_mask, e1_steps(&s->e, s->focus, f->edit_mask ? dc : -1));
     PUT("\"st\":[");
@@ -500,16 +527,47 @@ static int json_ui(e1_inst_t *s, char *buf, int len)
     PUT("],\"cr\":[");
     for (int i = 0; i < E1_CC_LANES; i++) PUT("%s%d", i ? "," : "", f->cc_rnd[i]);
     PUT("]}");
-#undef PUT
     if (pos >= len) return -1;
     return pos;
 }
+
+/* Flat JSON of strings for Schwung's Tool tab: every track's name, type,
+ * channel, output, mute and CC numbers, plus the names ui.js handed over. */
+static int json_state(e1_inst_t *s, char *buf, int len)
+{
+    int pos = 0;
+    PUT("{\"rev\":\"%u\"", (unsigned)s->rev);
+    for (int i = 0; i < E1_TRACKS; i++) {
+        const e1_track_t *t = &s->e.t[i];
+        char nm[2 * E1_NAME_LEN + 1]; int k = 0;
+        for (const char *c = t->name; *c && k < (int)sizeof nm - 2; c++) {
+            if (*c == '"' || *c == '\\') nm[k++] = '\\';
+            nm[k++] = *c;
+        }
+        nm[k] = 0;
+        PUT(",\"t%d_name\":\"%s\",\"t%d_type\":\"%d\",\"t%d_ch\":\"%d\",\"t%d_out\":\"%d\",\"t%d_mute\":\"%d\",\"t%d_ccn\":\"",
+            i + 1, nm, i + 1, t->v[E1_P_TYPE], i + 1, t->v[E1_P_CHANNEL], i + 1, t->v[E1_P_OUTPUT], i + 1, t->v[E1_P_MUTE], i + 1);
+        for (int l = 0; l < E1_CC_LANES; l++) PUT("%s%d", l ? "," : "", t->cc_num[l]);
+        PUT("\"");
+    }
+    if (s->names[0]) PUT(",%s", s->names);
+    PUT("}");
+    return pos < len ? pos : -1;
+}
+#undef PUT
 
 static int e1_get_param(void *inst, const char *key, char *buf, int len)
 {
     e1_inst_t *s = (e1_inst_t *)inst;
     if (!s || !key || !buf || len < 2) return -1;
     if (strcmp(key, "ui") == 0) return json_ui(s, buf, len);
+    if (strcmp(key, "state") == 0) return json_state(s, buf, len);
+    if (strcmp(key, "webreq") == 0) {
+        if (!s->wq_n) { buf[0] = 0; return 0; }
+        int n = snprintf(buf, (size_t)len, "%s", s->webq[s->wq_head]);
+        s->wq_head = (s->wq_head + 1) % 8; s->wq_n--;
+        return n < len ? n : len - 1;
+    }
     if (strcmp(key, "module_id") == 0) return snprintf(buf, (size_t)len, "e1");
     if (strcmp(key, "pkeys") == 0) {
         int pos = 0;
