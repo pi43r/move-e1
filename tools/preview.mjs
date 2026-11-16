@@ -54,7 +54,8 @@ const cases = [
     ["warn-sync", (() => { const s = state("t1", "Left"); s.snap.ck = 2; s.warn = "SET MOVE TO MIDI SYNC"; return s; })()],
     ["patterns", state("t1", "Left", { layer: "pattern" })],
     ["perform", state("t1", "Left", { layer: "perform", perfHeld: Array.from({ length: 16 }, (_, i) => i === 2), latched: Array.from({ length: 16 }, (_, i) => i === 6) })],
-    ["cycles", state("t1edit", "Left", { layer: "cycles" })],
+    ["cycles", (() => { const s = state("t1", "Left"); s.snap.ce = 4; s.snap.pc = 1; s.snap.r = 1; s.values.cycles = "4"; return s; })()],
+    ["save", state("t1", "Left", { saveMode: true })],
     ["list-scale", state("t10", "Right", { listKey: "scale", padKey: "scale" })],
     ["list-division", state("t1", "Left", { listKey: "division", padKey: "division" })],
     ["selected-knob", state("t1", "Left", { padKey: "pulses" })],
@@ -66,7 +67,7 @@ for (const [name, st] of cases) {
     const fb = createFramebuffer();
     const ctx = drawContext(fb);
     if (st.listKey && V.drawValueList(ctx, st)) { /* list of a named value */ }
-    else if (!V.drawLayer(ctx, st)) { renderPageMovy(ctx, V.pageOptions(st, LIB)); V.drawSelection(ctx, st); }
+    else if (!V.drawLayer(ctx, st)) { renderPageMovy(ctx, V.pageOptions(st, LIB)); V.drawSelection(ctx, st); V.drawCycleStrip(ctx, st); }
     if (fb.clipped()) bad++;
     if (pngDir) fs.writeFileSync(path.join(pngDir, name + ".png"), fb.toPng(4));
     else { console.log("== " + name); console.log(fb.toBlocks()); }

@@ -2,9 +2,7 @@
 
 E-1 is a 16-track Euclidean performance sequencer for [Ableton Move](https://www.ableton.com/move/). It runs as an overtake tool under [Schwung](https://github.com/charlesvestal/schwung) and plays Move's own tracks, a computer over USB-C, or both.
 
-The idea and most of the vocabulary come from the [Torso T-1](https://torsoelectronics.com/pages/t-1). E-1 is an independent project and is not affiliated with or endorsed by Torso Electronics.
-
-**Status: build 0.3.2.** Build 0.3 replaces the 0.2 control surface. E-1 has not yet been submitted to the Schwung catalog. Install it by hand as described below.
+**Status: build 0.3.3.** E-1 has not yet been submitted to the Schwung catalog. Install it by hand as described below.
 
 ![Move E-1 control map](docs/control-map.svg)
 
@@ -13,7 +11,7 @@ The control map is adapted from the [Move Bitwig](https://github.com/pi43r/move-
 | | |
 |---|---|
 | ![Left page](docs/screens/home-shape.png) | ![Right page](docs/screens/tone.png) |
-| ![Editing cycle 2](docs/screens/cycle-edit.png) | ![Pattern slots](docs/screens/patterns.png) |
+| ![Editing cycle 2](docs/screens/cycle-edit.png) | ![Menu](docs/screens/menu.png) |
 
 These screens are rendered from the real code with Schwung's own page renderer (`make preview`), so they match the display.
 
@@ -41,24 +39,21 @@ The starter set has tracks 1 to 4 (kick, snare, hat, clap, notes 36 to 39) on MI
 | Plus / Minus | Page the bottom pads, or move the Pitch keyboard an octave. |
 | Knobs 1 to 8 | Edit the current page. Hold Shift for each knob's second function. The LEDs under knobs 1 to 4 and 5 to 8 have two colours, matching the two rows on screen. The knob you last touched is white and has corner marks on screen. Turning a knob with named values (Div, Scale, Style and so on) shows the whole list. |
 | Jog wheel | Turn to change page: Left, Right. Click to go home. Shift + turn sets the tempo. |
-| Left buttons | Pattern (green), Cycles (blue), Temp (yellow), Perform (pink), top to bottom. Hold for momentary, tap to latch. Temp works only while held. A button turns white while its layer is up, and the screen shows a 4 by 4 grid that mirrors the bottom pads. |
-| Mute | Hold and tap track pads. The mutes apply together when you let go. Shift + track pad mutes at once. |
-| Sample | The T-1's Random. Hold and turn a knob to set how far that knob's value wanders. Hold and turn the jog wheel to set the chance, with Shift the rate. Delete + Sample clears random amounts. |
-| Loop | Hold to freeze the last 4 steps. Tap a step while holding to set the freeze length. |
+| Left buttons | Pattern, Cycles, Random, Perform, top to bottom. Hold one to use it, press it twice to keep it up, press it once more to let it go. |
+| Mute | Hold and tap track pads. The mutes apply together when you let go. Press Mute twice to keep it on: track pads then mute at once. Shift + track pad also mutes at once. |
+| Loop | Temp. Hold it and play with the knobs and pads. Let go and everything is back as it was. Press twice to keep Temp on, once more to undo. Capture keeps the changes. |
 | Copy | Hold with two track pads, two pattern pads or two cycle pads to copy the first onto the second. |
 | Delete | Hold with a track pad, pattern pad or cycle pad to clear it. Delete + touch a knob clears that knob's cycle edits and random amount. Delete + step clears hand edits. |
-| Capture | Save the current state to the next empty pattern. While Temp is held, keep the Temp edits. |
+| Capture | Save a pattern: press Capture, then tap one of the 16 slots on the bottom pads. Capture again or Back cancels. While Temp is on, Capture keeps the Temp changes. |
 | Undo | Step back, up to 24 steps. |
 | Play | Start and stop. When Move owns the clock, it presses Move's own Play. Shift + Play changes the clock source. |
 | Menu | Open the menu. Shift + Menu changes the output: Move, Computer, Both. |
-| Back | Step out: closes a menu level, Settings, cycle edit or a latched layer. Hold Back for half a second to switch to Move while E-1 keeps playing. To come back, use Schwung's Tools shortcut or open E-1 from the Tools menu. Shift + Back quits E-1 and stops it. |
+| Back | Step out: closes a menu level, Settings, cycle edit or a kept layer. Hold Back for half a second to switch to Move while E-1 keeps playing. To come back, use Schwung's Tools shortcut or open E-1 from the Tools menu. Shift + Back quits E-1 and stops it. |
 | Record | Stays Move's. |
 
 ## Knob pages
 
-E-1 lays its knobs out like the T-1. The T-1 has two rows of nine knobs. Move has eight, and the screen shows them as two rows of four. So E-1 has two pages, Left and Right, which are the left and the right half of the T-1 panel with every knob in the T-1's place. Shift is the T-1's Ctrl and gives the function the T-1 prints under each knob.
-
-The T-1's ninth column is elsewhere. Tempo is Shift + jog wheel. Random is Sample + jog wheel for the chance, and Shift + Sample + jog wheel for the rate.
+There are two pages, Left and Right. Hold Shift for each knob's second function. Tempo is Shift + jog wheel.
 
 Turn the jog wheel to change page. CC tracks add CC A and CC B after Left and Right.
 
@@ -71,7 +66,7 @@ Left     STEPS    PULSES   CYCLES   DIV          Right    VEL      SUSTAIN  PITC
 
 | Knob | Name | What it does | Shift |
 |---|---|---|---|
-| 1 | Steps | Length of the loop, 1 to 64 steps. | Fill: pulses added while the Fill move is held. E-1 only. |
+| 1 | Steps | Length of the loop, 1 to 64 steps. | Fill: pulses added while the Fill move is held. |
 | 2 | Pulses | Hits, spread as evenly as possible over the steps. | Rotate: moves every hit along by steps. |
 | 3 | Cycles | How many cycles the track plays in turn, 1 to 16. Touch it to pick a cycle to edit. |  |
 | 4 | Div | Length of one step: straight, triplet or dotted. |  |
@@ -122,33 +117,43 @@ Poly styles play the whole pool as a chord. Mono styles play one pool note per p
 
 Knobs 6 to 8 on Settings, and the Shift functions of knobs 1 to 3, act on the selected or held tracks. Press Back, or click the jog wheel, to leave Settings.
 
-## Colours
+## Lights
 
-The pads follow the T-1's colour rules, so what you learn on one reads the same on the other. In the track rows, the selected track is lit in its type colour, the others are dim, muted tracks are blue grey, and every track flashes white when it sounds.
-
-| Colour | Means |
+| Light | Means |
 |---|---|
-| White | The current value, the playing cycle or pattern, the playhead, white keys. |
-| Orange | Note tracks, pulses, amounts, notes in the pool. |
-| Cyan | CC tracks and their pulses. |
-| Blue grey | There but idle: muted tracks, straight divisions, cycles in use, other choices. |
-| Blue | Triplets, black keys, scales, patterns with content. Dark blue: empty patterns, steps without a pulse. |
-| Green | Bars for Length and Quant, cadences. Dark green: styles, grooves, LFO phrases. Blinking green: the copy source. |
-| Pink | Modifier pads at the right end of each row: octave, direction, phrase rate, swing grid, Choke or Tail. The active one is bright. |
-| Red | A cycle with its own edits. The Cycles button is red while you edit one cycle. |
-| Bright blue | Repeats INF. |
+| Track pads | The selected track is orange (note track) or cyan (CC track). Other tracks are grey, muted tracks are dark. A track flashes white when it sounds. |
+| Step row | Pulses in the track's colour, the playhead in white. |
+| White | The current value, the playing cycle or pattern. |
+| Orange | Amounts and the notes in the pool. |
+| Grey | A choice you can make, not chosen now. |
+| Blue | Triplets, black keys, scales, patterns with content. |
+| Green | Bars for Length and Quant. Dark green: styles, grooves, phrases. A green track pad is the copy source. |
+| Pink | Modifier pads at the right end of each row: octave, direction, phrase rate, swing grid, Choke or Tail. |
+| Red | A cycle with its own edits. Track pads waiting to be muted. |
 
 ## Cycles
 
 A cycle is one pass through a track's steps. A track plays its cycles in order, then starts again. Cycles 2 to 16 differ from cycle 1 only where you edited them.
 
-Hold or latch Cycles and the bottom pads show cycles 1 to 16. Tap a cycle to edit only that cycle: knob turns, value pads and step taps then change that cycle, and the track loops it so you hear the change. Tap it again to go back to editing all cycles. Hold one cycle pad and tap others to edit several together. Shift + pad sets the number of cycles. Copy + two pads copies a cycle. Delete + pad clears a cycle's edits.
+The boxes at the bottom right of the screen are the selected track's cycles. The filled box is playing now. A half filled box has its own edits.
 
-Length, Cycles, Delay, Grid, Rnd, Rate, Chan, Output and the Settings knobs always change the whole track.
+1. Turn Cycles (Left page, knob 3) to set how many cycles the track has.
+2. Hold the Cycles button. The bottom pads show the cycles: white is playing, red has edits.
+3. Tap a cycle pad. The track now loops that cycle and the screen says EDIT. Let go of the button.
+4. Turn knobs, tap value pads or tap steps. Only that cycle changes.
+5. Press Cycles once. The track plays all its cycles again.
+
+Hold one cycle pad and tap others to edit several together. With Cycles held, Shift + pad sets the number of cycles, Copy + two pads copies a cycle, and Delete + pad clears a cycle's edits. The Cycles button blinks red while you are editing a cycle.
+
+Length, Cycles, Delay, Grid, Chan, Output, the random chance and rate, and the Settings knobs always change the whole track.
+
+## Random
+
+Hold Random and turn a knob to set how far that knob's value wanders. Hold Random and turn the jog wheel to set the chance, with Shift the rate. Delete + Random clears the track's random amounts.
 
 ## Perform
 
-Hold or latch Perform and the bottom pads become 16 moves. Hold a pad to engage it. Shift + pad latches it, and tapping a latched pad lets it go. Held track pads limit a move to those tracks. Shift + Perform releases every move.
+Hold Perform, or press it twice to keep it up, and the bottom pads become 16 moves. Hold a pad to engage it. Shift + pad latches it, and tapping a latched pad lets it go. Held track pads limit a move to those tracks. Shift + Perform releases every move.
 
 | Row | Pads, left to right |
 |---|---|
@@ -159,9 +164,11 @@ Restart, Rotate +1 and New dice act once per tap. Rotate +1 changes the saved tr
 
 ## Sets and patterns
 
-A pattern is a copy of all 16 tracks. A set holds 16 patterns. Hold or latch Pattern: tap a pad to play that pattern on the next quantize line, tap it again to switch at once, Shift + pad to save into it. Copy and Delete work on pattern pads. Capture saves to the next empty slot.
+A pattern is a copy of all 16 tracks. A set holds 16 patterns.
 
-Menu is one short list that acts on what is in front of you: Save set, Save set as, Load set, Name pattern (the one playing), Name track (the one selected), Save track as preset, Load preset, Settings and More. More holds New empty set, Rename, Duplicate and the two Delete lists. Turn the jog wheel, click to choose, Back to step up, Menu to close. A finished action closes the menu. Names are typed with Schwung's on-screen keyboard. Copying and clearing patterns is done on the pads with Copy and Delete.
+To save a pattern, press Capture and tap a slot. To play one, hold Pattern and tap its pad. It starts on the next quantize line. Tap it again to switch at once. Copy + two pads copies a pattern, Delete + pad clears one.
+
+Menu has five rows: Save, Save as, Load, Rename and Settings. Turn the jog wheel, click to choose, Back to step up. Rename offers the selected track, the playing pattern and the set. In the Load list, hold Delete and click to delete a set.
 
 A set changes on disk only when you save it. The live state is saved separately and comes back the next time E-1 starts. Everything is stored in `/data/UserData/schwung/e1/`.
 

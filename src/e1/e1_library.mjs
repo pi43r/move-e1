@@ -373,47 +373,36 @@ export function createMenu({ host, now } = {}) {
         if (host && host.notify) host.notify(text); else say(text);
     };
     const pickSet = (s, fn) => s.sets.map((e) => ({ label: cleanName(e.name), mark: e.id === s.setId, fn: () => fn(e.id) }));
-    const pickPreset = (s, fn) => s.presets.map((p, i) => ({ label: cleanName(p && p.name), fn: () => fn(i) }));
     const none = (text) => [{ label: text, fn: () => pop() }];
 
-    /* One short list of things to do to what is in front of you: the loaded
-     * set, the pattern playing, the selected track. Lists open only to pick a
-     * set or a preset. Housekeeping sits under More. Each level: title,
-     * right-hand header text, and rows built from a fresh host.state(). */
+    /* Five rows, no scrolling. Everything acts on what is loaded, playing or
+     * selected. In the Load list, hold Delete and click to remove a set. */
     const LEVELS = {
         root: {
             title: () => "E-1",
             right: (s) => (s.setName || "") + (s.dirty ? "*" : ""),
             rows: (s) => {
-                const t = s.focus, tn = s.trackNames[t], cp = s.currentPattern;
                 const names = s.sets.map((e) => e.name);
                 const saveAs = () => ask("Save set as", s.setName || uniqueSetName(names),
                     (name) => { act("set.saveAs", { name }); done("SAVED " + name); });
-                const rows = [
-                    { label: "Save set", fn: () => { if (s.setId == null) return saveAs(); act("set.save"); done("SAVED " + s.setName); } },
-                    { label: "Save set as...", fn: saveAs },
-                    { label: "Load set...", fn: () => push({ kind: "loadSet" }) },
+                return [
+                    { label: "Save", fn: () => { if (s.setId == null) return saveAs(); act("set.save"); done("SAVED " + s.setName); } },
+                    { label: "Save as...", fn: saveAs },
+                    { label: "Load...", fn: () => push({ kind: "loadSet" }) },
+                    { label: "Rename...", fn: () => push({ kind: "rename" }) },
+                    { label: "Settings", fn: () => { act("settings.open"); close(); } },
                 ];
-                if (cp >= 0 && s.patterns[cp].filled)
-                    rows.push({ label: "Name pattern P" + (cp + 1) + "...", fn: () => ask("Pattern " + (cp + 1) + " name", s.patterns[cp].name,
-                        (name) => { act("pattern.rename", { i: cp, name }); done("P" + (cp + 1) + " " + name); }) });
-                rows.push({ label: "Name track T" + (t + 1) + "...", fn: () => ask("Track " + (t + 1) + " name", tn || "T" + (t + 1),
-                    (name) => { act("track.rename", { t, name }); done("T" + (t + 1) + " " + name); }) });
-                rows.push({ label: "Save T" + (t + 1) + " as preset...", fn: () => ask("Preset name", tn || "T" + (t + 1),
-                    (name) => { act("preset.save", { name }); done("PRESET SAVED"); }) });
-                rows.push({ label: "Load preset to T" + (t + 1) + "...", fn: () => push({ kind: "loadPreset" }) });
-                rows.push({ label: "Settings", fn: () => { act("settings.open"); close(); } });
-                rows.push({ label: "More...", fn: () => push({ kind: "more" }) });
-                return rows;
             },
         },
 
         loadSet: {
-            title: () => "Load set",
-            right: (s) => s.sets.length ? String(s.sets.length) : "",
-            rows: (s) => {
+            title: () => "Load",
+            right: () => "DEL REMOVES",
+            rows: (s, lv) => {
                 if (!s.sets.length) return none("No saved sets yet");
                 return pickSet(s, (id) => {
+                    if (host && host.deleteHeld && host.deleteHeld())
+                        return confirm("Delete set?", setName(s, id), () => { act("set.delete", { id }); backFrom(lv); say("DELETED"); }, "Delete");
                     const load = (save) => { if (save) act("set.save"); act("set.load", { id }); done("LOADED " + setName(s, id)); };
                     if (!s.dirty) return load(false);
                     confirm("Unsaved changes", "", null, null, { cur: 0, rows: [
@@ -425,52 +414,23 @@ export function createMenu({ host, now } = {}) {
             },
         },
 
-        loadPreset: {
-            title: (s) => "Preset to T" + (s.focus + 1),
+        rename: {
+            title: () => "Rename",
             right: () => "",
             rows: (s) => {
-                if (!s.presets.length) return none("No presets yet");
-                return pickPreset(s, (i) => { act("preset.load", { i }); done("LOADED " + cleanName(s.presets[i].name)); });
-            },
-        },
-
-        more: {
-            title: () => "More",
-            right: () => "",
-            rows: (s) => {
-                const names = s.sets.map((e) => e.name);
+                const t = s.focus, tn = s.trackNames[t], cp = s.currentPattern;
                 const rows = [
-                    { label: "New empty set...", fn: () => ask("New set", uniqueSetName(names),
-                        (name) => { act("set.new", { name }); done("NEW SET " + name); }) },
+                    { label: "Track T" + (t + 1) + (tn ? " " + tn : ""), fn: () => ask("Track " + (t + 1) + " name", tn || "T" + (t + 1),
+                        (name) => { act("track.rename", { t, name }); done("T" + (t + 1) + " " + name); }) },
                 ];
-                if (s.setId != null) {
-                    rows.push({ label: "Rename this set...", fn: () => ask("Rename set", s.setName,
-                        (name) => { act("set.rename", { id: s.setId, name }); done("RENAMED"); }) });
-                    rows.push({ label: "Duplicate this set", fn: () => { act("set.duplicate", { id: s.setId }); done("DUPLICATED"); } });
-                }
-                rows.push({ label: "Delete a set...", fn: () => push({ kind: "delSet" }) });
-                rows.push({ label: "Delete a preset...", fn: () => push({ kind: "delPreset" }) });
+                if (cp >= 0 && s.patterns[cp].filled)
+                    rows.push({ label: "Pattern P" + (cp + 1) + (s.patterns[cp].name ? " " + s.patterns[cp].name : ""),
+                        fn: () => ask("Pattern " + (cp + 1) + " name", s.patterns[cp].name,
+                            (name) => { act("pattern.rename", { i: cp, name }); done("P" + (cp + 1) + " " + name); }) });
+                if (s.setId != null)
+                    rows.push({ label: "Set " + s.setName, fn: () => ask("Rename set", s.setName,
+                        (name) => { act("set.rename", { id: s.setId, name }); done("SET " + name); }) });
                 return rows;
-            },
-        },
-
-        delSet: {
-            title: () => "Delete set",
-            right: () => "",
-            rows: (s, lv) => {
-                if (!s.sets.length) return none("No saved sets");
-                return pickSet(s, (id) => confirm("Delete set?", setName(s, id),
-                    () => { act("set.delete", { id }); backFrom(lv); say("DELETED"); }, "Delete"));
-            },
-        },
-
-        delPreset: {
-            title: () => "Delete preset",
-            right: () => "",
-            rows: (s, lv) => {
-                if (!s.presets.length) return none("No presets");
-                return pickPreset(s, (i) => confirm("Delete preset?", cleanName(s.presets[i].name),
-                    () => { act("preset.delete", { i }); backFrom(lv); say("DELETED"); }, "Delete"));
             },
         },
 

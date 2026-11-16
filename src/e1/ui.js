@@ -15,7 +15,7 @@
  *   Mute             hold + track pads, applied together on release.
  *   Sample           hold + turn a knob = how much that knob's value wanders.
  *   Jog              page; click = home. Shift+jog = tempo.
- *   Menu             sets, pattern names, track presets, settings.
+ *   Menu             save, load, rename, settings.
  *
  * Inspired by the Torso T-1. Not affiliated with Torso Electronics.
  */
@@ -31,7 +31,7 @@ import {
     PERFORM, CLOCKS, DESTS, COL, BTN, STEP_BASE, GLOBAL_KEYS,
     valuesFrom, metaFor, ledFrame, pageOptions, drawLayer, LAYER_COL, currentPages, pageIndex, knobKeys,
     padModel, padMode, padPages, padToTrack, padToSlot, trackName,
-    knobLeds, drawSelection, drawValueList, selectedKnob,
+    knobLeds, drawSelection, drawValueList, selectedKnob, drawCycleStrip,
 } from "./e1_view.mjs";
 import { createLibrary, createMenu } from "./e1_library.mjs";
 
@@ -41,9 +41,9 @@ const CC = {
     jogTurn: 14, jogClick: 3, shift: 49, menu: 50, back: 51, capture: 52,
     down: 54, up: 55, undo: 56, loop: 58, copy: 60, left: 62, right: 63,
     play: 85, rec: 86, mute: 88, sample: 118, del: 119,
-    lPattern: 43, lCycles: 42, lTemp: 41, lPerform: 40, knob0: 71,
+    lPattern: 43, lCycles: 42, lRandom: 41, lPerform: 40, knob0: 71,
 };
-const LAYER_OF = { [CC.lPattern]: "pattern", [CC.lCycles]: "cycles", [CC.lPerform]: "perform" };
+const LAYER_OF = { [CC.lPattern]: "pattern", [CC.lCycles]: "cycles", [CC.lRandom]: "random", [CC.lPerform]: "perform" };
 
 const SAVE_DIR = "/data/UserData/schwung/e1";
 const LIVE_FILE = SAVE_DIR + "/live.txt";
@@ -52,7 +52,8 @@ const LED_BUDGET = 20;          /* LED packets per tick; the out buffer holds ~6
 const TOAST_MS = 900;
 const LIST_MS = 700;             /* a value list stays this long after the last turn */
 const BACK_HOLD_MS = 450;        /* hold Back this long to switch to Move */
-const TAP_MS = 300;             /* a shorter press of a left button latches it */
+const TAP_MS = 300;             /* a press shorter than this is a tap */
+const DOUBLE_MS = 380;          /* two presses this close latch a hold button */
 const UNDO_DEPTH = 24;
 const GESTURE_MS = 1200;        /* edits closer than this share one undo step */
 const IDENTITY = new Set(["name", "type", "channel", "output", "mute"]);
@@ -60,8 +61,8 @@ const IDENTITY = new Set(["name", "type", "channel", "output", "mute"]);
 const st = {
     focus: 0, pageName: "Left", settings: false, stepPage: 0, touched: -1,
     padKey: "steps", padPage: 0, kbOct: 3, selKnob: 0, listKey: null, listUntil: 0,
-    shift: false, muteHeld: false, mutePend: 0, copyHeld: false, delHeld: false, loopHeld: false,
-    randomHeld: false, tempHeld: false, keepTemp: false,
+    shift: false, muteHeld: false, mutePend: 0, copyHeld: false, delHeld: false,
+    randomHeld: false, tempHeld: false, tempLock: false, keepTemp: false, muteLock: false, saveMode: false,
     layer: null, layerHeld: null, layerLock: null,
     held: new Set(), snap: null, values: {}, warn: null, now: 0,
     flashUntil: new Array(16).fill(0), toast: null,
@@ -80,7 +81,6 @@ let ledHave = {};
 let knobAcc = [0, 0, 0, 0, 0, 0, 0, 0];
 let undo = [], lastEditAt = -1e9;
 let toastShown = false, listShown = false;
-let loopMask = 0xFFFF;
 let layerPressAt = 0, layerPadUsed = false, layerSkipLock = false;
 let audNotes = {};              /* pad slot -> note being auditioned */
 let cycPadsDown = new Set();
@@ -123,7 +123,20 @@ function pages() { return currentPages(st); }
 function rel(d) { return d >= 0 ? "d+" + d : "d" + d; }
 function hex(m) { return (m >>> 0).toString(16); }
 function tname(t) { return "T" + (t + 1) + " " + trackName(st, t); }
-function refreshLayer() { st.layer = st.layerHeld || st.layerLock; dirty = true; }
+function refreshLayer() {
+    st.layer = st.layerHeld || st.layerLock;
+    const rnd = st.layer === "random";
+    if (rnd !== st.randomHeld) { st.randomHeld = rnd; knobAcc.fill(0); }
+    dirty = true;
+}
+
+/* True on the second of two quick presses of the same button. */
+const lastPress = {};
+function doubleTap(name) {
+    const d = st.now - (lastPress[name] || -1e9) < DOUBLE_MS;
+    lastPress[name] = d ? -1e9 : st.now;
+    return d;
+}
 
 function setFocus(t) {
     if (t === st.focus) return;
@@ -365,7 +378,6 @@ function releaseAllPerform() {
     for (let i = 0; i < 16; i++) { st.perfHeld[i] = false; st.latched[i] = false; }
     perf("clear", 0xFFFF, 0);
     st.soloMask = 0;
-    st.loopHeld = false;
     dirty = true;
 }
 
@@ -417,6 +429,7 @@ function recallPattern(i) {
 }
 
 function patternPress(i) {
+    if (st.saveMode) { st.saveMode = false; savePattern(i); return; }
     if (st.delHeld) {
         if (!st.patterns[i]) return;
         st.patterns[i] = null;
@@ -438,12 +451,6 @@ function patternPress(i) {
     recallPattern(i);
 }
 
-function captureToNext() {
-    const i = st.patterns.findIndex((p) => !p);
-    if (i < 0) { toast("FULL", "16 PATTERNS USED"); return; }
-    savePattern(i);
-}
-
 /* ------------------------------------------------------------ cycles */
 
 function cyclePress(i, on) {
@@ -463,7 +470,7 @@ function cyclePress(i, on) {
     const em = st.snap ? st.snap.em | 0 : 0;
     let next;
     if (cycPadsDown.size > 0) next = em | (1 << i);           /* hold one, tap more: edit them together */
-    else next = em === (1 << i) ? 0 : (1 << i);
+    else next = em === (1 << i) ? 0 : (1 << i);               /* tap the picked one again: all cycles */
     cycPadsDown.add(i);
     setP(f + "edit", hex(next));
     if (next) toast("EDIT", "CYCLE " + (i + 1)); else toast("CYCLES", "ALL");
@@ -472,7 +479,7 @@ function cyclePress(i, on) {
 
 function goHome() {
     if (st.snap && (st.snap.em | 0)) setP("t" + (st.focus + 1) + ":edit", "0");
-    st.layerLock = null; st.layerHeld = null;
+    st.layerLock = null; st.layerHeld = null; st.saveMode = false; st.muteLock = false;
     if (st.settings) { st.settings = false; reselect(); }
     if (menu && menu.isOpen()) menu.close();
     refreshLayer();
@@ -522,13 +529,6 @@ function onStep(idx, on) {
     if (!on) return;
     const steps = (st.snap && st.snap.sn) || parseInt(st.values.steps, 10) || 16;
     const f = "t" + (st.focus + 1) + ":";
-    if (st.loopHeld) {
-        const n = idx + 1;
-        perf("freeze", loopMask, 0);
-        perf("freeze", loopMask, n);
-        toast("FREEZE", n + " STEPS");
-        return;
-    }
     if (st.shift) { setTrack("steps", idx + 1); toast("STEPS", (idx + 1) + " " + who()); return; }
     if (st.delHeld) { checkpoint(); setP(f + "clearedits", "1"); toast("CLEAR", "HAND EDITS"); edited(); return; }
     if (idx < steps) { checkpoint(); setP(f + "toggle", idx); edited(); }
@@ -542,8 +542,8 @@ function onTrackPad(t, on) {
         return;
     }
     if (st.delHeld) { clearTrack(t); return; }
-    if (st.muteHeld && !st.shift) { st.mutePend ^= 1 << t; dirty = true; return; }   /* applied on release */
-    if (st.muteHeld || st.shift) { toggleMute(t); return; }
+    if (st.muteHeld && !st.muteLock && !st.shift) { st.mutePend ^= 1 << t; dirty = true; return; }   /* applied on release */
+    if (st.muteHeld || st.muteLock || st.shift) { toggleMute(t); return; }
     if (st.held.size === 0) setFocus(t);
     st.held.add(t);
     dirty = true;
@@ -607,28 +607,73 @@ function onNote(note, vel) {
     if (slot >= 0) onSlot(slot, on, vel);
 }
 
+/* Left buttons: hold for as long as you need the layer, press twice to keep
+ * it up, press once more to let it go. A single press of Cycles while a
+ * cycle is being edited goes back to all cycles. */
 function onLayerButton(cc, down) {
     const name = LAYER_OF[cc];
     if (down) {
         if (name === "perform" && st.shift) { releaseAllPerform(); toast("PERFORM", "ALL OFF"); return; }
-        layerSkipLock = st.layerLock === name;
+        if (name === "random" && st.delHeld) { setTrack("clearrandom", "1"); toast("CLEAR", "RANDOM " + who()); return; }
+        const wasLocked = st.layerLock === name;
         st.layerLock = null;                     /* one latch at a time */
+        if (!wasLocked && doubleTap(name)) { st.layerLock = name; toast(name, "LATCHED"); }
+        else if (wasLocked) lastPress[name] = -1e9;
         st.layerHeld = name;
         layerPressAt = st.now;
         layerPadUsed = false;
+        layerSkipLock = wasLocked;
     } else if (st.layerHeld === name) {
-        if (!layerSkipLock && !layerPadUsed && st.now - layerPressAt < TAP_MS) st.layerLock = name;
+        const tap = !layerPadUsed && st.now - layerPressAt < TAP_MS;
         st.layerHeld = null;
+        if (name === "cycles" && tap && !layerSkipLock && st.layerLock !== "cycles" && st.snap && (st.snap.em | 0)) {
+            setP("t" + (st.focus + 1) + ":edit", "0");
+            lastPress.cycles = -1e9;
+            toast("CYCLES", "ALL");
+        }
         if (name === "perform" && st.layerLock !== "perform")
             for (let i = 0; i < 16; i++) if (st.perfHeld[i]) { st.perfHeld[i] = false; if (!st.latched[i]) disengage(i); }
     }
     refreshLayer();
 }
 
+function onMute(down) {
+    if (down) {
+        if (st.muteLock) { st.muteLock = false; lastPress.mute = -1e9; toast("MUTE", "LATCH OFF"); }
+        else if (doubleTap("mute")) { st.muteLock = true; toast("MUTE", "LATCHED"); }
+        st.muteHeld = true;
+    } else {
+        st.muteHeld = false;
+        applyMutes();
+    }
+    dirty = true;
+}
+
+/* Temp: changes made while it is held are undone on release. Press twice to
+ * keep Temp on, once more to undo. Capture keeps the changes. */
+function onTemp(down) {
+    if (down) {
+        if (st.tempLock) {
+            st.tempLock = false; lastPress.temp = -1e9;
+            if (!st.keepTemp) { setP("temp", "0"); toast("TEMP", "RESTORED"); }
+            return;
+        }
+        const lock = doubleTap("temp");
+        st.tempHeld = true; st.keepTemp = false; st.tempLock = lock;
+        setP("temp", "1");
+        toast("TEMP", lock ? "LATCHED" : "LET GO TO UNDO");
+    } else if (st.tempHeld) {
+        st.tempHeld = false;
+        if (!st.tempLock && !st.keepTemp) { setP("temp", "0"); toast("TEMP", "RESTORED"); }
+    }
+}
+
 /* Back steps out of whatever is open. Held, it hands the surface to Move
  * while E-1 keeps playing. Shift+Back is the host's and quits E-1. */
 function stepBack() {
+    if (st.saveMode) { st.saveMode = false; return true; }
     if (st.settings) { st.settings = false; reselect(); return true; }
+    if (st.muteLock) { st.muteLock = false; return true; }
     if (st.snap && (st.snap.em | 0)) { setP("t" + (st.focus + 1) + ":edit", "0"); toast("CYCLES", "ALL"); return true; }
     if (st.layerLock) { st.layerLock = null; refreshLayer(); return true; }
     return false;
@@ -659,11 +704,12 @@ function onMenuInput(cc, v) {
 
 function onCC(cc, v) {
     const down = v > 0;
+    if (cc === CC.del) { st.delHeld = down; dirty = true; return; }
     if (menu && menu.isOpen() && onMenuInput(cc, v)) { dirty = true; return; }
     if (cc === CC.shift) { st.shift = down; knobAcc.fill(0); dirty = true; return; }
-    if (cc === CC.mute) { st.muteHeld = down; if (!down) applyMutes(); dirty = true; return; }
+    if (cc === CC.mute) { onMute(down); return; }
+    if (cc === CC.loop) { onTemp(down); return; }
     if (cc === CC.copy) { st.copyHeld = down; if (!down) { st.copySrc = -1; st.copyPat = -1; st.copyCyc = -1; } dirty = true; return; }
-    if (cc === CC.del) { st.delHeld = down; return; }
     if (cc >= CC.knob0 && cc < CC.knob0 + 8) { turnKnob(cc - CC.knob0, decodeDelta(v)); return; }
     if (cc === CC.jogTurn) {
         const d = decodeDelta(v);
@@ -681,28 +727,6 @@ function onCC(cc, v) {
     }
     if (cc in LAYER_OF) { onLayerButton(cc, down); return; }
     if (cc === CC.back) { onBack(down); return; }
-    if (cc === CC.lTemp) {
-        if (down) { st.tempHeld = true; st.keepTemp = false; setP("temp", "1"); toast("TEMP", "LET GO TO UNDO"); }
-        else if (st.tempHeld) {
-            st.tempHeld = false;
-            if (!st.keepTemp) { setP("temp", "0"); toast("TEMP", "RESTORED"); }
-        }
-        return;
-    }
-    if (cc === CC.sample) {
-        if (down && st.delHeld) { setTrack("clearrandom", "1"); toast("CLEAR", "RANDOM " + who()); return; }
-        st.randomHeld = down;
-        knobAcc.fill(0);
-        if (down) toast("RANDOM", "KNOB OR JOG");
-        dirty = true;
-        return;
-    }
-    if (cc === CC.loop) {
-        const mask = heldMask() || 0xFFFF;
-        if (down) { st.loopHeld = true; loopMask = mask; perf("freeze", mask, 0); perf("freeze", mask, 4); toast("FREEZE", "4 STEPS"); }
-        else if (st.loopHeld) { st.loopHeld = false; perf("freeze", loopMask, 0); dirty = true; }
-        return;
-    }
     if (!down) return;   /* the rest act on press */
     switch (cc) {
     case CC.play: pressPlay(); break;
@@ -725,8 +749,8 @@ function onCC(cc, v) {
     }
     case CC.undo: doUndo(); break;
     case CC.capture:
-        if (st.tempHeld) { st.keepTemp = true; setP("temp", "keep"); toast("TEMP", "KEPT"); edited(); }
-        else captureToNext();
+        if (st.tempHeld || st.tempLock) { st.keepTemp = true; st.tempLock = false; setP("temp", "keep"); toast("TEMP", "KEPT"); edited(); }
+        else { st.saveMode = !st.saveMode; st.toast = null; dirty = true; }
         break;
     case CC.left: case CC.right: {
         const d = cc === CC.right ? 1 : -1;
@@ -796,6 +820,7 @@ const host = {
         };
     },
     notify(text) { toast("OK", text); },
+    deleteHeld() { return st.delHeld; },
     askName(title, initial, onConfirm) {
         openTextEntry({ title, initialText: initial || "", onConfirm: (text) => { onConfirm(text); dirty = true; }, onCancel: () => { dirty = true; } });
     },
@@ -849,12 +874,12 @@ function buttonFrame() {
     /* A left button shows its layer's colour, and white while its layer is up. */
     const lay = (name) => (st.layer === name ? COL.white : LAYER_COL[name]);
     b[CC.play] = s.r ? COL.green : COL.grey;
-    b[CC.sample] = st.randomHeld ? COL.white : COL.dimPink;
+    b[CC.sample] = COL.off;
     b[CC.menu] = w((menu && menu.isOpen()) || st.settings);
     b[CC.shift] = w(st.shift);
-    b[CC.mute] = w(st.muteHeld || (s.mu | 0));
-    b[CC.loop] = w(st.loopHeld);
-    b[CC.capture] = BTN.dim;
+    b[CC.mute] = w(st.muteHeld || st.muteLock);
+    b[CC.loop] = w(s.tmp);
+    b[CC.capture] = w(st.saveMode);
     b[CC.undo] = undo.length ? BTN.dim : BTN.off;
     b[CC.copy] = w(st.copyHeld);
     b[CC.del] = w(st.delHeld);
@@ -866,8 +891,8 @@ function buttonFrame() {
     b[CC.left] = st.stepPage > 0 ? BTN.on : BTN.off;
     b[CC.right] = (st.stepPage + 1) * 16 < steps ? BTN.on : BTN.off;
     b[CC.lPattern] = lay("pattern");
-    b[CC.lCycles] = (s.em | 0) ? COL.red : lay("cycles");
-    b[CC.lTemp] = s.tmp ? COL.white : LAYER_COL.temp;
+    b[CC.lCycles] = (s.em | 0) && st.layer !== "cycles" ? (Math.floor(st.now / 250) % 2 ? COL.red : COL.off) : lay("cycles");
+    b[CC.lRandom] = lay("random");
     b[CC.lPerform] = lay("perform");
     const kl = knobLeds(st);
     for (let i = 0; i < 8; i++) b[CC.knob0 + i] = kl[i];
@@ -932,6 +957,7 @@ function draw() {
     if (listShowing() && drawValueList(ctx, st)) return;
     renderPageMovy(ctx, pageOptions(st, LIB));
     drawSelection(ctx, st);
+    drawCycleStrip(ctx, st);
 }
 
 /* ------------------------------------------------------------ save/load */
@@ -1004,7 +1030,7 @@ globalThis.init = function () {
  * reached us, so let go of everything held. */
 globalThis.onResume = function () {
     st.now = Date.now();
-    st.shift = st.muteHeld = st.copyHeld = st.delHeld = st.randomHeld = false;
+    st.shift = st.muteHeld = st.copyHeld = st.delHeld = st.saveMode = false;
     st.mutePend = 0;
     st.held.clear();
     st.copySrc = st.copyPat = st.copyCyc = -1;
@@ -1015,8 +1041,8 @@ globalThis.onResume = function () {
     for (const i in audNotes) setP("aud:" + audNotes[i].t, audNotes[i].n + " 0");
     audNotes = {};
     for (let i = 0; i < 16; i++) if (st.perfHeld[i]) { st.perfHeld[i] = false; if (!st.latched[i]) disengage(i); }
-    if (st.loopHeld) { st.loopHeld = false; perf("freeze", loopMask, 0); }
-    if (st.tempHeld) { st.tempHeld = false; if (!st.keepTemp) setP("temp", "0"); }
+    st.saveMode = false;
+    if (st.tempHeld) { st.tempHeld = false; if (!st.keepTemp && !st.tempLock) setP("temp", "0"); }
     knobAcc.fill(0);
     ledHave = {};
     lastSnapStr = "";
@@ -1041,7 +1067,7 @@ globalThis.tick = function () {
     if (showing !== toastShown) { toastShown = showing; dirty = true; }
     const listing = listShowing();
     if (listing !== listShown) { listShown = listing; dirty = true; }
-    if ((frame % 6) === 0 && ((menu && menu.isOpen()) || st.layer)) dirty = true;
+    if ((frame % 6) === 0 && ((menu && menu.isOpen()) || st.layer || st.saveMode)) dirty = true;
     if (dirty) { draw(); dirty = false; }
 };
 

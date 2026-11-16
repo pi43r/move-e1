@@ -23,7 +23,7 @@
       ]
     },
     {
-      "title": "Pages like the T-1",
+      "title": "Knob pages",
       "lines": [
         "Left page, knobs:",
         "1 Steps  2 Pulses",
@@ -35,20 +35,20 @@
         "3 Pitch 4 Length",
         "5 Accent 6 Timing",
         "7 Scale 8 Chan",
-        "Shift = T-1 Ctrl.",
-        "Tempo: Shift+jog.",
-        "Random: Sample+jog."
+        "Shift: 2nd function.",
+        "Tempo: Shift+jog."
       ]
     },
     {
-      "title": "Colours",
+      "title": "Lights",
       "lines": [
+        "Selected track:",
+        " orange, or cyan",
+        " for a CC track.",
+        "Other tracks: grey.",
+        "Muted: dark.",
         "White: current.",
-        "Orange: note track,",
-        " pulses, amounts.",
-        "Cyan: CC track.",
-        "Blue grey: muted,",
-        " idle.",
+        "Orange: amounts.",
         "Blue: triplets,",
         " patterns.",
         "Green: bars,",
@@ -101,49 +101,60 @@
     {
       "title": "Left buttons",
       "lines": [
-        "Hold, or tap to",
-        " latch. Top down:",
-        "Pattern, Cycles,",
-        "Temp, Perform.",
-        "Temp is hold only."
+        "Top down: Pattern,",
+        " Cycles, Random,",
+        " Perform.",
+        "Hold: use it.",
+        "Press twice: keep",
+        " it up.",
+        "Press again: off."
       ]
     },
     {
       "title": "Pattern",
       "lines": [
-        "Pads: 16 patterns.",
-        "Tap: plays on the",
-        " quantize line.",
+        "Save: Capture, then",
+        " tap a slot.",
+        "Play: hold Pattern,",
+        " tap a pad. Starts",
+        " on the quantize",
+        " line.",
         "Tap again: now.",
-        "Shift+pad: save.",
         "Copy+pad+pad: copy.",
-        "Delete+pad: clear.",
-        "Capture: save to",
-        " next empty slot."
+        "Delete+pad: clear."
       ]
     },
     {
       "title": "Cycles",
       "lines": [
-        "Pads: cycles 1-16.",
-        "Tap: edit only that",
-        " cycle. Tap again:",
+        "Boxes on screen:",
+        " the track's cycles.",
+        " Filled: playing.",
+        "Hold Cycles, tap a",
+        " pad: edit only",
+        " that cycle. It",
+        " loops.",
+        "Press Cycles once:",
         " back to all.",
         "Hold one, tap more:",
         " edit several.",
         "Shift+pad: number",
         " of cycles.",
-        "Delete+knob touch:",
-        " clear its edits."
+        "Delete+pad: clear",
+        " its edits."
       ]
     },
     {
       "title": "Temp",
       "lines": [
-        "Hold Temp and edit.",
+        "Temp is Loop.",
+        "Hold it and edit.",
         "Let go: undone.",
-        "Capture while held:",
-        " keep the edits."
+        "Press twice: stays",
+        " on. Once more:",
+        " undone.",
+        "Capture: keep the",
+        " changes."
       ]
     },
     {
@@ -151,8 +162,8 @@
       "lines": [
         "16 moves on pads.",
         "Hold: on while held.",
-        "Shift+pad: latch.",
-        "Tap latched: off.",
+        "Shift+pad: keep on.",
+        "Tap it again: off.",
         "Hold track pads to",
         " limit the tracks.",
         "Shift+Perform:",
@@ -160,26 +171,27 @@
       ]
     },
     {
-      "title": "Mute and Loop",
+      "title": "Mute",
       "lines": [
         "Mute+track pads:",
         " applied together",
         " when you let go.",
-        "Loop held: freeze",
-        " the last 4 steps.",
-        "Loop+step: length."
+        "Press Mute twice:",
+        " stays on, pads",
+        " mute at once.",
+        "Press again: off."
       ]
     },
     {
       "title": "Random",
       "lines": [
-        "Hold Sample, turn a",
+        "Hold Random, turn a",
         " knob: how far its",
         " value wanders.",
-        "Sample+jog: chance.",
-        "Shift+Sample+jog:",
+        "Random+jog: chance.",
+        "Shift+Random+jog:",
         " rate.",
-        "Delete+Sample:",
+        "Delete+Random:",
         " clear random."
       ]
     },
@@ -198,14 +210,14 @@
     {
       "title": "Menu and exit",
       "lines": [
-        "Menu: save, load,",
-        " name, settings.",
+        "Menu: Save, Save as,",
+        " Load, Rename,",
+        " Settings.",
         "Jog: move. Click:",
         " choose. Back: up.",
-        " Menu: close.",
-        "Back: step out of",
-        " menu, settings,",
-        " cycle edit, latch.",
+        "Load list: Delete+",
+        " click deletes.",
+        "Back: step out.",
         "Hold Back: to Move.",
         " E-1 keeps playing.",
         "Shift+Back: quit."

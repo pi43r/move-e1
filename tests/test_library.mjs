@@ -208,16 +208,16 @@ function setup(over) {
 const go = (m, n) => { m.jog(-99); m.jog(n); };
 const last = (h) => h.acts[h.acts.length - 1];
 
-/* The menu is one flat list acting on the loaded set, the playing pattern
- * and the selected track. Rows: 0 Save set, 1 Save set as, 2 Load set,
- * 3 Name pattern, 4 Name track, 5 Save preset, 6 Load preset, 7 Settings, 8 More. */
+/* The menu has five rows: 0 Save, 1 Save as, 2 Load, 3 Rename, 4 Settings. */
 {
     const { m, host } = setup();
     host.notes = []; host.notify = (t) => host.notes.push(t);
     check("open", m.isOpen());
     checkEq("root path", m.path(), ["E-1"]);
-    go(m, 0); m.click();
-    checkEq("save set", last(host), ["set.save"]);
+    m.jog(99); m.click();
+    checkEq("last row is Settings: five rows", last(host), ["settings.open"]);
+    m.open(); go(m, 0); m.click();
+    checkEq("save", last(host), ["set.save"]);
     check("a finished action closes the menu", !m.isOpen());
     checkEq("and reports on the main screen", host.notes, ["SAVED Beta"]);
 }
@@ -231,7 +231,7 @@ const last = (h) => h.acts[h.acts.length - 1];
 {
     const { m, host } = setup();
     go(m, 2); m.click();
-    checkEq("load list", m.path(), ["E-1", "Load set"]);
+    checkEq("load list", m.path(), ["E-1", "Load"]);
     go(m, 2); m.click();
     checkEq("clean: loads at once", last(host), ["set.load", { id: "c" }]);
     check("closed after load", !m.isOpen());
@@ -245,49 +245,33 @@ const last = (h) => h.acts[h.acts.length - 1];
 }
 {
     const { m, host } = setup();
-    go(m, 3); m.click(); host.asks[0].cb("Verse");
-    checkEq("name the playing pattern", last(host), ["pattern.rename", { i: 0, name: "Verse" }]);
-}
-{
-    const { m, host } = setup();
-    go(m, 4); m.click();
-    checkEq("track name starts from the current one", host.asks[0].initial, "HAT");
-    host.asks[0].cb("Ride");
-    checkEq("name the selected track", last(host), ["track.rename", { t: 2, name: "Ride" }]);
-}
-{
-    const { m, host } = setup({ currentPattern: -1 });
-    go(m, 3); m.click();
-    check("no pattern playing: the row is not there", host.asks[0].title.startsWith("Track"));
-}
-{
-    const { m, host } = setup();
-    go(m, 5); m.click(); host.asks[0].cb("Tight hat");
-    checkEq("save preset", last(host), ["preset.save", { name: "Tight hat" }]);
-    m.open(); go(m, 6); m.click(); go(m, 1); m.click();
-    checkEq("load preset", last(host), ["preset.load", { i: 1 }]);
-    m.open(); go(m, 7); m.click();
-    checkEq("settings", last(host), ["settings.open"]);
-    check("settings closes the menu", !m.isOpen());
-}
-{
-    const { m, host } = setup();
-    go(m, 8); m.click();
-    checkEq("more", m.path(), ["E-1", "More"]);
-    go(m, 3); m.click(); go(m, 0); m.click();
-    check("delete asks first", host.acts.length === 0);
-    m.jog(1); m.click();
-    check("cancel is the default and deletes nothing", host.acts.length === 0);
+    host.deleteHeld = () => true;
+    go(m, 2); m.click(); go(m, 0); m.click();
+    check("Delete + click asks first", host.acts.length === 0);
+    m.click();
+    check("cancel is the default", host.acts.length === 0);
     m.click(); m.jog(-1); m.click();
     checkEq("delete set", last(host), ["set.delete", { id: "a" }]);
-    checkEq("after delete: back in More", m.path(), ["E-1", "More"]);
-    check("back steps up", m.back() === true && m.path().length === 1);
-    check("back at the top closes", m.back() === false && !m.isOpen());
 }
 {
-    const { m } = setup({ sets: [], presets: [] });
+    const { m, host } = setup();
+    go(m, 3); m.click();
+    checkEq("rename list", m.path(), ["E-1", "Rename"]);
+    go(m, 0); m.click();
+    checkEq("track name starts from the current one", host.asks[0].initial, "HAT");
+    host.asks[0].cb("Ride");
+    checkEq("rename the selected track", last(host), ["track.rename", { t: 2, name: "Ride" }]);
+    m.open(); go(m, 3); m.click(); go(m, 1); m.click(); host.asks[1].cb("Verse");
+    checkEq("rename the playing pattern", last(host), ["pattern.rename", { i: 0, name: "Verse" }]);
+    m.open(); go(m, 3); m.click(); go(m, 2); m.click(); host.asks[2].cb("Gig");
+    checkEq("rename the set", last(host), ["set.rename", { id: "b", name: "Gig" }]);
+}
+{
+    const { m } = setup({ sets: [] });
     go(m, 2); m.click(); m.click();
     checkEq("empty list: click goes back", m.path(), ["E-1"]);
+    check("back at the top closes", m.back() === false && !m.isOpen());
+    m.open();
     const prints = [];
     m.draw({ print: (x, y, t) => prints.push(t), fillRect() {}, textWidth: (t) => t.length * 6 });
     check("draws title and hint", prints.includes("E-1") && prints.some((p) => p.startsWith("CLICK")), prints);

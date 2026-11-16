@@ -219,13 +219,14 @@ export function displayFor(key, raw) {
 /* Move palette numbers (Schwung shared/constants.mjs), named for the T-1
  * colour they stand in for. The T-1's rules, which the pads follow:
  *   white      the current value, the playing cycle or pattern, the playhead
- *   orange     note tracks, pulses, amounts, notes in the pool
- *   cyan       CC tracks
- *   blue grey  there but idle: muted tracks, straight divisions, steps
+ *   orange     the selected note track, pulses, amounts, notes in the pool
+ *   cyan       the selected CC track and its pulses
+ *   grey       there but idle; near black: muted, empty, unused
  *   blue       triplets, black keys, patterns with content
  *   green      bars (Length, Quantize), cadences; dark green: styles, grooves
  *   pink       modifier pads at the right end of each row
  *   red        something edited in one cycle
+ * Nothing blinks except a queued pattern and a cycle picked for editing.
  */
 export const COL = {
     off: 0, white: 120, grey: 123, dim: 124,
@@ -233,7 +234,7 @@ export const COL = {
     orange: 3, dimOrange: 69, amber: 4, yellow: 8,
     green: 11, darkGreen: 85,
     cyan: 46, dimCyan: 93,
-    blue: 17, darkBlue: 97, brightBlue: 16, blueGrey: 95,
+    blue: 17, brightBlue: 16, lightGrey: 118,
     purple: 23, pink: 26, dimPink: 115,
 };
 /* Buttons with a white LED take a brightness, not a palette number. */
@@ -241,7 +242,7 @@ export const BTN = { off: 0, dim: 16, on: 124 };
 
 /* One colour per layer, on its left button and on its pads. White always
  * means "this one, now". Red always means "editing one cycle". */
-export const LAYER_COL = { pattern: COL.blue, cycles: COL.purple, temp: COL.yellow, perform: COL.pink };
+export const LAYER_COL = { pattern: COL.blue, cycles: COL.red, random: COL.purple, perform: COL.pink };
 
 export const STEP_BASE = 16;
 export function trackPadNote(t) { return t < 8 ? 92 + t : 84 + (t - 8); }
@@ -266,7 +267,7 @@ const typeDim = (s, t) => (isCCBit(s, t) ? COL.dimCyan : COL.dimOrange);
 /* Which thing the bottom pads show right now. Held layers win over the
  * knob under your finger. */
 export function padMode(st) {
-    if (st.layer === "pattern") return "pattern";
+    if (st.layer === "pattern" || st.saveMode) return "pattern";
     if (st.layer === "cycles") return "cycles";
     if (st.layer === "perform") return "perform";
     if (st.padKey === "cycles") return "cycles";
@@ -302,7 +303,7 @@ export function padModel(st) {
     if (mode === "pattern") {
         for (let i = 0; i < 16; i++) {
             const filled = st.patterns && st.patterns[i];
-            let c = filled ? COL.blue : COL.darkBlue;
+            let c = filled ? COL.blue : COL.dim;
             if (st.current === i) c = COL.white;
             if (st.queued === i) c = blink ? COL.white : COL.blue;
             pads[i] = { c, act: { k: "pattern", i } };
@@ -313,7 +314,7 @@ export function padModel(st) {
         for (let i = 0; i < 16; i++) {
             const p = PERFORM[i];
             const held = st.perfHeld && st.perfHeld[i], latched = st.latched && st.latched[i];
-            pads[i] = { c: held || (latched && blink) ? COL.white : COL[p.color], act: { k: "perf", i } };
+            pads[i] = { c: held || latched ? COL.white : COL[p.color], act: { k: "perf", i } };
         }
         return { title: "PERFORM", pads };
     }
@@ -321,8 +322,8 @@ export function padModel(st) {
         const n = parseInt(v.cycles, 10) || 1;
         const em = s.em | 0, ce = s.ce | 0;
         for (let i = 0; i < 16; i++) {
-            let c = i < n ? COL.blueGrey : COL.off;
-            if ((ce >> i) & 1) c = i < n ? COL.red : COL.dimRed;   /* edited, as on the T-1 */
+            let c = i < n ? COL.grey : COL.off;
+            if ((ce >> i) & 1) c = i < n ? COL.red : COL.dimRed;   /* has its own edits */
             if (s.r && !em && i === (s.pc | 0)) c = COL.white;
             if ((em >> i) & 1) c = blink ? COL.white : COL.red;
             pads[i] = { c, act: { k: "cycle", i } };
@@ -354,7 +355,7 @@ export function padModel(st) {
             const note = 12 * (oct + 2) + pc;
             const inScale = scale.includes(((pc - root) % 12 + 12) % 12);
             if (note > 127) continue;
-            let c = inScale ? (black ? COL.blue : COL.white) : COL.blueGrey;
+            let c = inScale ? (black ? COL.blue : COL.white) : COL.grey;
             if (pool.has(note)) c = COL.orange;
             pads[i] = { c, act: inScale || pool.has(note) ? { k: "pool", note } : null };
         }
@@ -368,7 +369,7 @@ export function padModel(st) {
     if (key === "division" || key === "time" || key === "rate") {
         for (const slot in DIV_SLOTS) {
             const idx = DIV_SLOTS[slot];
-            const c = DIVISIONS[idx] === cur ? COL.white : (idx < 7 ? COL.blueGrey : (idx < 12 ? COL.blue : COL.purple));
+            const c = DIVISIONS[idx] === cur ? COL.white : (idx < 7 ? COL.grey : (idx < 12 ? COL.blue : COL.purple));
             pads[slot] = { c, act: set(key, DIVISIONS[idx], m.name + " " + DIVISIONS[idx]) };
         }
         return { title, pads };
@@ -392,7 +393,7 @@ export function padModel(st) {
 
     if (m.type === "enum") {
         m.options.slice(0, 16).forEach((o, i) => {
-            pads[i] = { c: o === cur ? COL.white : (ENUM_COL[key] || COL.blueGrey), act: set(key, o, m.name + " " + o) };
+            pads[i] = { c: o === cur ? COL.white : (ENUM_COL[key] || COL.grey), act: set(key, o, m.name + " " + o) };
         });
         return { title, pads };
     }
@@ -415,10 +416,10 @@ export function padModel(st) {
          * middle, upper row nudges, as on the T-1. */
         COARSE.forEach((f, i) => {
             const val = Math.round(f * m.max);
-            pads[8 + i] = { c: val === curN ? COL.white : (f === 0 ? COL.blueGrey : COL.orange), act: set(key, val, m.name + " " + val) };
+            pads[8 + i] = { c: val === curN ? COL.white : (f === 0 ? COL.grey : COL.orange), act: set(key, val, m.name + " " + val) };
         });
         NUDGE.forEach((d, i) => {
-            if (d === null) pads[i] = { c: COL.blueGrey, act: set(key, 0, m.name + " 0") };
+            if (d === null) pads[i] = { c: COL.grey, act: set(key, 0, m.name + " 0") };
             else pads[i] = { c: COL.dimOrange, act: { k: "nudge", key, d } };
         });
         if (key === "voicing") dirPads(pads, v);
@@ -443,8 +444,8 @@ export function padModel(st) {
          * Channel is a choice, not an amount, so only the choice is bright. */
         let c;
         if (val === curN) c = COL.white;
-        else if (key === "channel") c = COL.blueGrey;
-        else if (key === "steps" || key === "cycles") c = val < curN ? COL.blue : COL.darkBlue;
+        else if (key === "channel") c = COL.grey;
+        else if (key === "steps" || key === "cycles") c = val < curN ? COL.blue : COL.dim;
         else c = val < curN ? COL.orange : COL.dimOrange;
         pads[i] = { c, act: set(key, val, m.name + " " + lab) };
     });
@@ -480,14 +481,16 @@ export function ledFrame(st) {
     for (let t = 0; t < 16; t++) {
         const muted = (mu >> t) & 1, soloed = (pf >> (16 + t)) & 1;
         const hit = st.flashUntil && st.flashUntil[t] > now;
-        /* T-1 home view: the selected track in its type colour, muted tracks
-         * blue grey, every sounding track flashes white. */
+        /* The selected track holds its colour and never flashes. The others
+         * are grey and flash white when they sound. Muted tracks are near black. */
         const sel = t === st.focus || (st.held && st.held.has(t));
-        let c = muted || soloed ? COL.blueGrey : (sel ? typeColor(s, t) : typeDim(s, t));
-        if (hit && !muted && !soloed) c = COL.white;
-        else if (sel && (muted || soloed)) c = blink ? typeColor(s, t) : COL.blueGrey;
-        if (((st.mutePend | 0) >> t) & 1) c = blink ? COL.red : COL.off;
-        if (st.copySrc === t) c = blink ? COL.green : COL.off;   /* copy source, green as on the T-1 */
+        const quiet = muted || soloed;
+        let c;
+        if (sel) c = quiet ? typeDim(s, t) : typeColor(s, t);
+        else if (quiet) c = COL.dim;
+        else c = hit ? COL.white : COL.grey;
+        if (((st.mutePend | 0) >> t) & 1) c = COL.red;
+        if (st.copySrc === t) c = COL.green;
         out[trackPadNote(t)] = c;
     }
 
@@ -504,8 +507,8 @@ export function ledFrame(st) {
         let c = COL.off;
         if (idx < steps) {
             const on = (hits >> BigInt(idx)) & 1n;
-            c = on ? typeColor(s, st.focus) : COL.darkBlue;
-            if (s.r && idx === cur) c = on ? COL.white : COL.grey;
+            c = on ? typeColor(s, st.focus) : COL.dim;
+            if (s.r && idx === cur) c = on ? COL.white : COL.lightGrey;
         }
         out[STEP_BASE + i] = c;
     }
@@ -549,14 +552,12 @@ export function footerFor(st) {
     if (s.tmp) out.push(["TEMP", ""]);
     if (s.em | 0) {
         const ids = []; for (let c = 0; c < 16; c++) if (((s.em | 0) >> c) & 1) ids.push(c + 1);
-        out.push(["EDIT", "CYC " + cut(ids.join("+"), 8)]);
+        out.push(["EDIT", "C" + cut(ids.join("+"), 5)]);
         return out;
     }
     if (st.queued >= 0 && st.queued !== undefined && st.queued !== null) out.push(["NEXT", "P" + (st.queued + 1)]);
     else if (st.current >= 0 && st.patterns && st.patterns[st.current]) out.push(["P" + (st.current + 1), cut(st.patterns[st.current].name || "", 7).toUpperCase()]);
-    const n = parseInt((st.values || {}).cycles, 10) || 1;
-    if (!s.tmp) out.push(["C", ((s.pc | 0) + 1) + "/" + n]);
-    out.push(["", s.ck === 2 ? "EXT" : String(Math.round(s.bpm || 120))]);
+    if (!out.length) out.push(["", String(Math.round(s.bpm || 120)) + " BPM"]);
     return out;
 }
 
@@ -570,6 +571,7 @@ export function pageOptions(st, lib) {
     let title = st.settings ? "E-1" : "T" + (st.focus + 1) + " " + cut(trackName(st, st.focus), 8);
     if (!st.settings && st.held && st.held.size > 1) title = st.held.size + " TRACKS";
     let label = pg.name;
+    if ((s.em | 0) && !st.settings) title = cut(title, 8) + " EDIT";
     if (st.randomHeld) label = "Random";
     else if (st.shift) label = pg.name + " 2";
     return {
@@ -612,13 +614,13 @@ const PERF_SHORT = ["FILL", "RAT2", "RAT3", "RAT4", "HALF", "DBL", "REV", "ACC",
 export function drawLayer(ctx, st) {
     const s = st.snap || {};
     const blink = Math.floor((st.now || 0) / 200) % 2 === 0;
-    if (st.layer === "pattern") {
+    if (st.layer === "pattern" || st.saveMode) {
         const cells = Array.from({ length: 16 }, (_, i) => {
             const p = st.patterns && st.patterns[i];
             return { txt: p ? (p.name || "P" + (i + 1)).toUpperCase() : "-", on: st.current === i, box: st.queued === i && blink };
         });
         drawGrid(ctx, st, "PATTERNS", cut((st.setName || "").toUpperCase(), 11), cells,
-            st.shift ? "TAP SAVES HERE" : "TAP PLAY  SHIFT SAVE");
+            st.saveMode ? "TAP A SLOT TO SAVE" : (st.shift ? "TAP SAVES HERE" : "TAP A SLOT TO PLAY"));
         return true;
     }
     if (st.layer === "perform") {
@@ -626,17 +628,6 @@ export function drawLayer(ctx, st) {
         const n = st.held ? st.held.size : 0;
         drawGrid(ctx, st, "PERFORM", n ? n + (n === 1 ? " TRACK" : " TRACKS") : "ALL TRACKS", cells,
             st.shift ? "TAP LATCHES" : "HOLD  SHIFT LATCHES");
-        return true;
-    }
-    if (st.layer === "cycles") {
-        const n = parseInt((st.values || {}).cycles, 10) || 1;
-        const em = s.em | 0, ce = s.ce | 0;
-        const cells = Array.from({ length: 16 }, (_, i) => ({
-            txt: i < n ? (i + 1) + (((ce >> i) & 1) ? "*" : "") : "-",
-            on: (em >> i) & 1, box: !em && s.r && i === (s.pc | 0),
-        }));
-        drawGrid(ctx, st, "CYCLES", "T" + (st.focus + 1) + " " + cut(trackName(st, st.focus), 8), cells,
-            st.shift ? "TAP SETS HOW MANY" : (em ? "EDITING  TAP TO END" : "TAP EDITS  * CHANGED"));
         return true;
     }
     return false;
@@ -712,4 +703,30 @@ export function drawValueList(ctx, st) {
     ctx.print(1, 57, "TURN, OR TAP A PAD", 1);
     ctx.print(127 - ctx.textWidth(foot), 57, foot, 1);
     return true;
+}
+
+/* ------------------------------------------------------------ cycle strip */
+
+/* One small box per cycle at the right of the footer, always on screen:
+ * filled = playing, outline = waiting, half filled = has its own edits, and the ones
+ * picked for editing are filled and underlined. */
+export function drawCycleStrip(ctx, st) {
+    const s = st.snap || {};
+    if (st.settings || st.warn || (st.toast && st.toast.until > (st.now || 0))) return;
+    const n = Math.max(1, Math.min(16, parseInt((st.values || {}).cycles, 10) || 1));
+    const em = s.em | 0, ce = s.ce | 0, pc = s.pc | 0;
+    const x0 = 128 - n * 6, y = 57;
+    ctx.fillRect(x0 - 2, 55, n * 6 + 2, 9, 0);
+    for (let i = 0; i < n; i++) {
+        const x = x0 + i * 6;
+        const picked = (em >> i) & 1;
+        const playing = em ? picked && i === pc : (s.r ? i === pc : i === 0);
+        if (playing || (picked && !s.r)) ctx.fillRect(x, y, 5, 5, 1);
+        else {
+            ctx.fillRect(x, y, 5, 1, 1); ctx.fillRect(x, y + 4, 5, 1, 1);
+            ctx.fillRect(x, y, 1, 5, 1); ctx.fillRect(x + 4, y, 1, 5, 1);
+            if ((ce >> i) & 1) ctx.fillRect(x, y + 3, 5, 2, 1);
+        }
+        if (picked) ctx.fillRect(x, y + 6, 5, 1, 1);
+    }
 }
