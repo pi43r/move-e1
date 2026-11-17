@@ -28,6 +28,9 @@ sed -e "s#\"./e1_view.mjs\"#\"./e1_view.$STAMP.mjs\"#" -e "s#\"./e1_library.mjs\
 grep -q "e1_view.$STAMP.mjs" dist/e1/ui.js && grep -q "e1_library.$STAMP.mjs" dist/e1/ui.js || { echo "e1: helper imports not stamped" >&2; exit 1; }
 
 aarch64-linux-gnu-nm -D dist/e1/dsp.so | grep -q " T move_plugin_init_v2" || { echo "e1: missing move_plugin_init_v2" >&2; exit 1; }
+# Move ships an old glibc: refuse anything newer than 2.17.
+NEWER=$(aarch64-linux-gnu-objdump -T dist/e1/dsp.so | grep -o "GLIBC_[0-9.]*" | sort -uV | grep -vx "GLIBC_2.17" || true)
+[ -z "$NEWER" ] || { echo "e1: dsp.so needs $NEWER, Move has 2.17-level symbols only" >&2; exit 1; }
 file dist/e1/dsp.so
 
 (cd dist && tar -czf e1-module.tar.gz e1)

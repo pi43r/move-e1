@@ -2,7 +2,7 @@
 
 ## Hardware tests
 
-Run these on a Move with build 0.4.0. Tick each one that works.
+Run these on a Move with build 0.4.1. Tick each one that works.
 
 **Loading and switching**
 - [ ] E-1 opens from Tools after installing over a running Schwung.

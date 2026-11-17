@@ -8,6 +8,13 @@
 #include <string.h>
 #include <math.h>
 
+/* Move's glibc is older than the build machine's. Bind math calls to the
+ * oldest aarch64 versions so dsp.so loads there (build.sh checks this). */
+#if defined(__aarch64__) && defined(__GLIBC__)
+__asm__(".symver pow,pow@GLIBC_2.17");
+__asm__(".symver fmod,fmod@GLIBC_2.17");
+#endif
+
 /* ------------------------------------------------------------------ tables */
 
 const char *const e1_division_names[E1_DIVISIONS] = {
