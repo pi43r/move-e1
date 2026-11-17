@@ -288,6 +288,8 @@ const last = (h) => h.acts[h.acts.length - 1];
     }
     check("init is silent", JSON.parse(starterSet(0).globals).live.every((d) => d.includes("pulses=0")));
     check("no starter 9", starterSet(9) === null);
+    check("starters set the song", JSON.parse(starterSet(2).globals).g.includes("songscale=Minor"));
+    check("pitched starter tracks follow the song", JSON.parse(starterSet(2).globals).live.slice(8, 11).every((d) => d.includes("scale=Song") && d.includes("root=Song")));
 }
 
 console.log(pass + "/" + (pass + fail) + " library checks passed");

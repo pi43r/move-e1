@@ -113,7 +113,7 @@ export function normaliseSet(raw) {
 function starterTracks(over) {
     const base = (t) => {
         if (t < 8) return { channel: 1 };
-        if (t < 11) return { channel: t - 6, scale: "Minor", sustain: 40, pool: [36, "60,63,67", "72,75,79"][t - 8] };
+        if (t < 11) return { channel: t - 6, scale: "Song", root: "Song", sustain: 40, pool: [36, "60,63,67", "72,75,79"][t - 8] };
         return { type: "CC", channel: t - 6 };
     };
     return Array.from({ length: TRACKS }, (_, t) => {
@@ -141,6 +141,9 @@ const STARTERS = [
     } },
 ];
 
+/* Notes tracks in a starter follow the song: C minor, no chord track yet. */
+const STARTER_GLOBALS = "songroot=C\nsongscale=Minor\nchordtrack=0\n";
+
 export const STARTER_NAMES = STARTERS.map((s) => s.name);
 
 /* A complete set for starter i, playing pattern 1. */
@@ -149,7 +152,7 @@ export function starterSet(i) {
     if (!s) return null;
     const tracks = starterTracks(s.tracks);
     const set = emptySet(s.name);
-    set.globals = JSON.stringify({ g: "", live: tracks });
+    set.globals = JSON.stringify({ g: STARTER_GLOBALS, live: tracks });
     set.patterns[0] = { name: s.name === "Init" ? "" : s.name, tracks: tracks.slice() };
     set.current = 0;
     return set;

@@ -31,8 +31,11 @@ static const char *const CCMODE_NAMES[] = { "Pulse", "Change", "Glide" };
 static const char *const ONOFF_NAMES[]  = { "Off", "On" };
 static const char *const STYLE_NAMES[]  = { "PolyFix", "PolyRamp", "PolyClimb", "MonoFix", "MonoRamp", "MonoClimb", "Dice" };
 static const char *const PHRASE_NAMES[] = { "Cad1", "Cad2", "Cad3", "Cad4", "Saw", "Tri", "Sine", "Pulse", "Dice" };
-static const char *const SCALE_NAMES[]  = { "Chrom", "Major", "Minor", "Penta", "Hira", "Iwato", "Tetra", "Dorian" };
-static const char *const ROOT_NAMES[]   = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+/* "Song" is value -1 in both lists: the track follows the set. */
+static const char *const SCALE_NAMES[]  = { "Song", "Chrom", "Major", "Minor", "Penta", "Hira", "Iwato", "Tetra", "Dorian",
+                                            "Phryg", "Lydian", "Mixo", "Locri", "HarMin", "MelMin", "Blues", "MinPen", "Whole" };
+static const char *const ROOT_NAMES[]   = { "Song", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+static const char *const FOLLOW_NAMES[] = { "Off", "Bass", "Chord", "Arp" };
 static const char *const GROOVE_NAMES[] = { "Agogo", "Congas", "Timbal", "Bongo", "Saw", "Tri", "Sine", "Pulse", "Dice" };
 static const char *const GRID_NAMES[]   = { "x1", "x2", "x4" };
 static const char *const DIR_NAMES[]    = { "Up", "Down" };
@@ -42,7 +45,7 @@ static const char *const LOOP_NAMES[]   = { "Free", "1", "2", "4", "8" };
 static const char *const AUTO_NAMES[]   = { "Off", "1", "2", "4", "8" };
 static const char *const DICE_NAMES[E1_DICE_LAYERS] = { "notes", "accents", "lengths", "octaves", "rhythm" };
 
-static const int8_t SCALE_DEG[8][12] = {
+static const int8_t SCALE_DEG[E1_SCALES][12] = {
     { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 },
     { 0, 2, 4, 5, 7, 9, 11 },
     { 0, 2, 3, 5, 7, 8, 10 },
@@ -51,8 +54,17 @@ static const int8_t SCALE_DEG[8][12] = {
     { 0, 1, 5, 6, 10 },
     { 0, 4, 7, 10 },
     { 0, 2, 3, 5, 7, 9, 10 },
+    { 0, 1, 3, 5, 7, 8, 10 },      /* Phrygian */
+    { 0, 2, 4, 6, 7, 9, 11 },      /* Lydian */
+    { 0, 2, 4, 5, 7, 9, 10 },      /* Mixolydian */
+    { 0, 1, 3, 5, 6, 8, 10 },      /* Locrian */
+    { 0, 2, 3, 5, 7, 8, 11 },      /* Harmonic minor */
+    { 0, 2, 3, 5, 7, 9, 11 },      /* Melodic minor */
+    { 0, 3, 5, 6, 7, 10 },         /* Blues */
+    { 0, 3, 5, 7, 10 },            /* Minor pentatonic */
+    { 0, 2, 4, 6, 8, 10 },         /* Whole tone */
 };
-static const int8_t SCALE_LEN[8] = { 12, 7, 7, 5, 5, 5, 4, 7 };
+static const int8_t SCALE_LEN[E1_SCALES] = { 12, 7, 7, 5, 5, 5, 4, 7, 7, 7, 7, 7, 7, 7, 6, 5, 6 };
 
 /* Velocity shapes, one value per step of a 16-step bar, in tenths (-10..10). */
 static const int8_t GROOVE_SHAPE[4][16] = {
@@ -105,8 +117,8 @@ static const pdesc_t P[E1_NP] = {
     [E1_P_STYLE]      = { "style",      0, E1_STYLE_DICE, 0, STYLE_NAMES,  F_STEP | F_CYC, 0 },
     [E1_P_RANGE]      = { "range",      -16, 16, 0,  NULL,         F_STEP | F_CYC | F_RR, 7 },
     [E1_P_PHRASE]     = { "phrase",     0, E1_PHRASE_DICE, 0, PHRASE_NAMES, F_STEP | F_CYC, 0 },
-    [E1_P_SCALE]      = { "scale",      0, 7, 0,     SCALE_NAMES,  F_STEP | F_CYC, 0 },
-    [E1_P_ROOT]       = { "root",       0, 11, 0,    ROOT_NAMES,   F_STEP | F_CYC, 0 },
+    [E1_P_SCALE]      = { "scale",      E1_SONG, E1_SCALES - 1, 0, SCALE_NAMES, F_STEP | F_CYC, 0 },
+    [E1_P_ROOT]       = { "root",       E1_SONG, 11, 0, ROOT_NAMES,   F_STEP | F_CYC, 0 },
     [E1_P_ACCENT]     = { "accent",     -100, 100, 0, NULL,        F_STEP | F_CYC | F_RR, 100 },
     [E1_P_GROOVE]     = { "groove",     0, E1_GROOVE_DICE, 0, GROOVE_NAMES, F_STEP | F_CYC, 0 },
     [E1_P_TIMING]     = { "timing",     -50, 50, 0,  NULL,         F_CYC | F_RR, 50 },
@@ -126,6 +138,8 @@ static const pdesc_t P[E1_NP] = {
     [E1_P_DICETYPE]   = { "dicetype",   1, 16, 8,    NULL,         0, 0 },
     [E1_P_AUTOROLL]   = { "autoroll",   0, E1_LOOPS - 1, 0, AUTO_NAMES, 0, 0 },
     [E1_P_DICELEN]    = { "dicelen",    0, 1, 0,     ONOFF_NAMES,  0, 0 },
+    [E1_P_FOLLOW]     = { "follow",     0, 3, 0,     FOLLOW_NAMES, 0, 0 },
+    [E1_P_SPLIT]      = { "split",      0, E1_TRACKS, 0, NULL,     0, 0 },
 };
 
 int e1_param_count(void) { return E1_NP; }
@@ -218,6 +232,10 @@ static int eff_s(const e1_engine_t *e, int ti, int p, int c, int ridx, int step)
     return clampi(v, d->lo, d->hi);
 }
 
+/* What a track's Scale and Root mean once Song is looked up. */
+static int rscale(const e1_engine_t *e, int v) { return v < 0 ? clampi(e->song_scale, 0, E1_SCALES - 1) : clampi(v, 0, E1_SCALES - 1); }
+static int rroot(const e1_engine_t *e, int v) { return v < 0 ? e->song_root % 12 : clampi(v, 0, 11); }
+
 static int div_ticks(int idx) { return e1_division_ticks[clampi(idx, 0, E1_DIVISIONS - 1)]; }
 
 /* ------------------------------------------------------------- defaults */
@@ -264,7 +282,8 @@ void e1_init(e1_engine_t *e)
             t->v[E1_P_MUTE] = (i >= 4);
         } else if (i < 11) {
             t->v[E1_P_CHANNEL] = (int16_t)(i - 8 + 2);
-            t->v[E1_P_SCALE] = 2;                 /* minor */
+            t->v[E1_P_SCALE] = E1_SONG;           /* the set's scale and root */
+            t->v[E1_P_ROOT] = E1_SONG;
             t->v[E1_P_SUSTAIN] = 40;
             t->v[E1_P_MUTE] = 1;
             if (i == 8) { t->pool[0] = 36; t->pool_n = 1; t->v[E1_P_PULSES] = 5; }
@@ -285,6 +304,8 @@ void e1_init(e1_engine_t *e)
     }
     e->dest = E1_DEST_MOVE;
     e->seed = 0xE1u;
+    e->song_root = 0;
+    e->song_scale = 2;                            /* C minor */
 }
 
 /* ---------------------------------------------------------------- euclid */
@@ -465,14 +486,14 @@ static int dice_list(int layer)
 }
 
 /* Put a layer's Dice entry up, remembering what it replaces. */
-static void dice_select(e1_track_t *t, int layer)
+static void dice_select(const e1_engine_t *e, e1_track_t *t, int layer)
 {
     int k = dice_list(layer);
     if (layer == E1_DICE_LENGTHS) t->v[E1_P_DICELEN] = 1;
     /* An amount of zero would leave the new lane unheard. */
     if (layer == E1_DICE_ACCENTS && t->v[E1_P_ACCENT] == 0) t->v[E1_P_ACCENT] = 60;
     if (layer == E1_DICE_OCTAVES && t->v[E1_P_RANGE] == 0)
-        t->v[E1_P_RANGE] = (int16_t)clampi(SCALE_LEN[clampi(t->v[E1_P_SCALE], 0, 7)], 1, 16);
+        t->v[E1_P_RANGE] = (int16_t)clampi(SCALE_LEN[rscale(e, t->v[E1_P_SCALE])], 1, 16);
     if (k < 0 || t->v[DICE_PAR[k]] == DICE_ENT[k]) return;
     t->dwas[k] = (uint8_t)(t->v[DICE_PAR[k]] + 1);
     t->v[DICE_PAR[k]] = DICE_ENT[k];
@@ -653,6 +674,7 @@ void e1_join(e1_engine_t *e, double origin, double now)
         t->cur_cycle = 0;
         t->rt_T = 0;
         t->ar_idx = 0;
+        t->split_n = 0;
         for (int c = 0; c < E1_CHAINS; c++) t->chain[c].left = 0;
         resync(e, t);
     }
@@ -703,11 +725,13 @@ void e1_copy_stored(e1_track_t *dst, const e1_track_t *src)
     memcpy(dst, src, E1_TRACK_STORED_BYTES);
 }
 
-static void note_on(e1_engine_t *e, e1_track_t *t, int note, int vel, double when, double len,
+/* `to` is the track whose channel and output the note goes to: the track
+ * itself, or its Split partner. The voice stays with the track that played. */
+static void note_on(e1_engine_t *e, e1_track_t *t, const e1_track_t *to, int note, int vel, double when, double len,
                     e1_emit_fn emit, void *user)
 {
-    int ports = e1_ports(e, t);
-    uint8_t ch = (uint8_t)((t->v[E1_P_CHANNEL] - 1) & 0x0F);
+    int ports = e1_ports(e, to);
+    uint8_t ch = (uint8_t)((to->v[E1_P_CHANNEL] - 1) & 0x0F);
     note = clampi(note, 0, 127);
     e1_voice_t *slot = NULL;
     for (int i = 0; i < E1_VOICES; i++) {
@@ -727,6 +751,15 @@ static void note_on(e1_engine_t *e, e1_track_t *t, int note, int vel, double whe
     slot->on = 1; slot->note = (uint8_t)note; slot->ch = ch; slot->ports = (uint8_t)ports;
     slot->off = when + (len < 1.0 ? 1.0 : len);
     t->flash = 1;
+}
+
+/* Split: every second hit of the track goes to its partner's channel and
+ * output. Returns the track this hit plays through. */
+static const e1_track_t *split_to(e1_engine_t *e, e1_track_t *t)
+{
+    int p = t->v[E1_P_SPLIT] - 1;
+    if (p < 0 || p >= E1_TRACKS || &e->t[p] == t) return t;
+    return (t->split_n++ & 1) ? &e->t[p] : t;
 }
 
 /* ---------------------------------------------------------------- pitch */
@@ -767,27 +800,88 @@ static int phrase_tenths(int phrase, double ph)
     }
 }
 
+/* A pool moved by Pitch, Harmony and a phrase shift, in the scale, sorted. */
+static void pool_shift(const int *src, int n, int pitch, int harm, int shift, int scale, int root, int *L)
+{
+    int ha = harm < 0 ? -harm : harm, hs = harm < 0 ? -1 : 1;
+    for (int j = 0; j < n; j++) {
+        int extra = (ha > j) ? (ha - j + n - 1) / n : 0;     /* Harmony moves one note per click */
+        L[j] = shift_in_scale(src[j], pitch + shift + hs * extra, scale, root);
+    }
+    sort_notes(L, n);
+}
+
+/* The chord: the chord track's pool as its Pitch and Harmony leave it in
+ * the cycle (and on the step) it plays now. Voicing and Style are how the
+ * chord track itself plays the chord, so they stay out. */
+int e1_chord(const e1_engine_t *e, int *out)
+{
+    int ci = (int)e->chord_track - 1;
+    if (ci < 0 || ci >= E1_TRACKS) return 0;
+    const e1_track_t *t = &e->t[ci];
+    int n = t->pool_n > E1_POOL ? E1_POOL : t->pool_n;
+    if (t->v[E1_P_TYPE] != E1_TYPE_NOTE || n <= 0) return 0;
+    int c = e->running ? clampi(t->cur_cycle, 0, E1_CYCLES - 1) : e1_display_cycle(t);
+    int step = e->running ? t->cur_step : -1;
+    int src[E1_POOL];
+    for (int j = 0; j < n; j++) src[j] = t->pool[j];
+    pool_shift(src, n, eff_s(e, ci, E1_P_PITCH, c, -1, step), eff_s(e, ci, E1_P_HARMONY, c, -1, step), 0,
+               rscale(e, eff_s(e, ci, E1_P_SCALE, c, -1, step)), rroot(e, eff_s(e, ci, E1_P_ROOT, c, -1, step)), out);
+    for (int j = 0; j < n; j++) out[j] = clampi(out[j], 0, 127);
+    return n;
+}
+
+/* The notes a track starts from: its own pool, or what its Follow role
+ * takes from the chord, moved to the octave of the track's own lowest note.
+ * *role is the role in force, Off when the track plays its own pool. */
+static int source_pool(const e1_engine_t *e, int ti, int *src, int *role)
+{
+    const e1_track_t *t = &e->t[ti];
+    int n = t->pool_n > E1_POOL ? E1_POOL : t->pool_n;
+    for (int j = 0; j < n; j++) src[j] = t->pool[j];
+    *role = E1_FOLLOW_OFF;
+    int f = t->v[E1_P_FOLLOW];
+    if (f == E1_FOLLOW_OFF || ti == (int)e->chord_track - 1) return n;
+    int ch[E1_POOL], cn = e1_chord(e, ch);
+    if (cn <= 0) return n;
+    *role = f;
+    int oct = n > 0 ? (t->pool[0] / 12 - ch[0] / 12) * 12 : 0;
+    if (f == E1_FOLLOW_BASS) cn = 1;                         /* the chord's lowest note */
+    for (int j = 0; j < cn; j++) {
+        src[j] = ch[j] + oct;
+        while (src[j] > 127) src[j] -= 12;
+        while (src[j] < 0) src[j] += 12;
+    }
+    return cn;
+}
+
+uint32_t e1_followers(const e1_engine_t *e)
+{
+    uint32_t m = 0;
+    int ch[E1_POOL];
+    if (e1_chord(e, ch) <= 0) return 0;
+    for (int i = 0; i < E1_TRACKS; i++)
+        if (e->t[i].v[E1_P_TYPE] == E1_TYPE_NOTE && e->t[i].v[E1_P_FOLLOW] && i != (int)e->chord_track - 1) m |= 1u << i;
+    return m;
+}
+
 /* The notes one pulse plays. pidx counts pulses since the cycle began (and
  * goes on counting through repeats), which is what moves mono styles and
  * Climb along. Returns the note count, at most E1_POOL. */
 static int build_notes(const e1_engine_t *e, int ti, int c, int step, int pidx, int dpos, int shift, int ridx, int *out)
 {
     const e1_track_t *t = &e->t[ti];
-    int n = t->pool_n;
+    int src[E1_POOL], role;
+    int n = source_pool(e, ti, src, &role);
     if (n <= 0) return 0;
-    if (n > E1_POOL) n = E1_POOL;
-    int scale = eff_s(e, ti, E1_P_SCALE, c, ridx, step), root = eff_s(e, ti, E1_P_ROOT, c, ridx, step);
+    int scale = rscale(e, eff_s(e, ti, E1_P_SCALE, c, ridx, step)), root = rroot(e, eff_s(e, ti, E1_P_ROOT, c, ridx, step));
     int pitch = eff_s(e, ti, E1_P_PITCH, c, ridx, step), harm = eff_s(e, ti, E1_P_HARMONY, c, ridx, step);
     int voicing = eff_s(e, ti, E1_P_VOICING, c, ridx, step), style = eff_s(e, ti, E1_P_STYLE, c, ridx, step);
     int down = eff(e, ti, E1_P_DIR, c, ridx);
+    if (role == E1_FOLLOW_ARP && style < 3) style += 3;      /* an arp plays one chord tone at a time */
 
     int L[E1_POOL + 16], len = n;
-    int ha = harm < 0 ? -harm : harm, hs = harm < 0 ? -1 : 1;
-    for (int j = 0; j < n; j++) {
-        int extra = (ha > j) ? (ha - j + n - 1) / n : 0;     /* Harmony moves one note per click */
-        L[j] = shift_in_scale(t->pool[j], pitch + shift + hs * extra, scale, root);
-    }
-    sort_notes(L, len);
+    pool_shift(src, n, pitch, harm, shift, scale, root, L);
 
     int dice = style == E1_STYLE_DICE;
     int poly = style < 3, kind = dice ? 1 : style % 3;       /* Dice takes Voicing as Ramp does */
@@ -1025,7 +1119,7 @@ static void fire(e1_engine_t *e, int ti, const slot_t *s, double when, e1_emit_f
     int phrase = eff_s(e, ti, E1_P_PHRASE, c, ridx, step);
     int shift;
     if (phrase >= E1_PHRASE_DICE) {              /* whole octaves, as many as Range holds */
-        int sl = SCALE_LEN[clampi(eff_s(e, ti, E1_P_SCALE, c, ridx, step), 0, 7)];
+        int sl = SCALE_LEN[rscale(e, eff_s(e, ti, E1_P_SCALE, c, ridx, step))];
         int room = abs(range) / sl, o = dice_octave(t->dseed[E1_DICE_OCTAVES], dpos);
         if (range && room < 1) room = 1;
         if (o > room) o = room;
@@ -1070,9 +1164,10 @@ static void fire(e1_engine_t *e, int ti, const slot_t *s, double when, e1_emit_f
     int notes[E1_POOL];
     int n = build_notes(e, ti, c, step, pidx, dpos, shift, ridx, notes);
     int drop = prob > 0 ? prob : 0;
+    const e1_track_t *to = split_to(e, t);
     for (int j = 0; j < n; j++) {
         if (drop && e1_chance(seed, ti, (int64_t)((uint64_t)id * 31u + (uint64_t)j + 1u)) < drop) continue;
-        note_on(e, t, notes[j], vel, when, len, emit, user);
+        note_on(e, t, to, notes[j], vel, when, len, emit, user);
     }
 
     if (repeats > 0) {
@@ -1120,9 +1215,10 @@ static void run_chains(e1_engine_t *e, int ti, double now, e1_emit_fn emit, void
                 int vel = clampi(ch->vel + ch->ramp * 32 * ch->k / 100, 1, 127);
                 double len = ch->len;
                 if (len > ch->interval * 0.9) len = ch->interval * 0.9;
+                const e1_track_t *to = split_to(e, t);
                 for (int j = 0; j < n; j++) {
                     if (ch->prob && e1_chance(tseed(e, t), ti, (int64_t)ch->id * 131 + ch->k * 17 + j) < ch->prob) continue;
-                    note_on(e, t, notes[j], vel, ch->next, len, emit, user);
+                    note_on(e, t, to, notes[j], vel, ch->next, len, emit, user);
                 }
             }
             ch->interval *= ch->pace;
@@ -1258,9 +1354,13 @@ void e1_advance(e1_engine_t *e, double tick_now, e1_emit_fn emit, void *user)
     if (!e->running || !isfinite(tick_now)) return;
     if (tick_now < e->tick) tick_now = e->tick;   /* never run time backwards */
     e->tick = tick_now;
+    /* The chord track goes first, so tracks that follow it hear a chord
+     * change on the same tick. */
+    int ci = (int)e->chord_track - 1;
+    if (ci >= 0 && ci < E1_TRACKS) advance_track(e, ci, tick_now, emit, user);
     for (int ti = 0; ti < E1_TRACKS; ti++) {
         e1_track_t *t = &e->t[ti];
-        advance_track(e, ti, tick_now, emit, user);
+        if (ti != ci) advance_track(e, ti, tick_now, emit, user);
         run_chains(e, ti, tick_now, emit, user);
         expire(t, tick_now, emit, user);
     }
@@ -1472,7 +1572,7 @@ static int set_track(e1_engine_t *e, int ti, const char *key, const char *val, i
             if (cc && k != E1_DICE_RHYTHM) continue;
             if (!roll) { dice_clear(t, k); continue; }
             t->dseed[k] = new_seed(e, ti, k);
-            dice_select(t, k);
+            dice_select(e, t, k);
         }
         /* Rhythm alone on a full track: thin it a little so the roll is heard. */
         if (roll && l == E1_DICE_RHYTHM && t->v[E1_P_DENSITY] >= 16) t->v[E1_P_DENSITY] = 12;
@@ -1592,6 +1692,22 @@ static int set_global(e1_engine_t *e, const char *key, const char *val)
         return 1;
     }
     if (strcmp(key, "seed") == 0) { e->seed = (uint32_t)strtoul(val, NULL, 10); return 1; }
+    int v;
+    if (strcmp(key, "songroot") == 0) {
+        if (!parse_value(val, e->song_root, 0, 11, ROOT_NAMES + 1, &v)) return 0;
+        e->song_root = (uint8_t)v;
+        return 1;
+    }
+    if (strcmp(key, "songscale") == 0) {
+        if (!parse_value(val, e->song_scale, 0, E1_SCALES - 1, SCALE_NAMES + 1, &v)) return 0;
+        e->song_scale = (uint8_t)v;
+        return 1;
+    }
+    if (strcmp(key, "chordtrack") == 0) {
+        if (!parse_value(val, e->chord_track, 0, E1_TRACKS, NULL, &v)) return 0;
+        e->chord_track = (uint8_t)v;
+        return 1;
+    }
     return 0;
 }
 
@@ -1628,6 +1744,9 @@ int e1_get(const e1_engine_t *e, int track, const char *key, char *buf, int len)
     if (track < 0) {
         if (strcmp(key, "dest") == 0) return snprintf(buf, (size_t)len, "%s", DEST_NAMES[e->dest % 3]);
         if (strcmp(key, "seed") == 0) return snprintf(buf, (size_t)len, "%u", (unsigned)e->seed);
+        if (strcmp(key, "songroot") == 0) return snprintf(buf, (size_t)len, "%s", ROOT_NAMES[1 + e->song_root % 12]);
+        if (strcmp(key, "songscale") == 0) return snprintf(buf, (size_t)len, "%s", SCALE_NAMES[1 + rscale(e, e->song_scale)]);
+        if (strcmp(key, "chordtrack") == 0) return snprintf(buf, (size_t)len, "%d", e->chord_track);
         return -1;
     }
     if (track >= E1_TRACKS) return -1;
@@ -1728,7 +1847,8 @@ int e1_dump_track(const e1_engine_t *e, int track, char *buf, int len)
 int e1_dump_global(const e1_engine_t *e, char *buf, int len)
 {
     if (len <= 0) return 0;
-    return snprintf(buf, (size_t)len, "dest=%s\nseed=%u\n", DEST_NAMES[e->dest % 3], (unsigned)e->seed);
+    return snprintf(buf, (size_t)len, "dest=%s\nseed=%u\nsongroot=%s\nsongscale=%s\nchordtrack=%d\n", DEST_NAMES[e->dest % 3],
+                    (unsigned)e->seed, ROOT_NAMES[1 + e->song_root % 12], SCALE_NAMES[1 + rscale(e, e->song_scale)], e->chord_track);
 }
 
 typedef int (*line_fn)(e1_engine_t *e, int track, const char *key, const char *val);

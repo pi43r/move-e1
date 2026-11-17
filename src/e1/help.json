@@ -35,6 +35,8 @@
         "3 Pitch 4 Length",
         "5 Accent 6 Timing",
         "7 Scale 8 Chan",
+        "Shift+Sustain:",
+        " Follow.",
         "Shift: 2nd function.",
         "Tempo: Shift+jog."
       ]
@@ -271,6 +273,28 @@
         "Shift+knob 4 Left:",
         " density, how many",
         " hits sound."
+      ]
+    },
+    {
+      "title": "Harmony",
+      "lines": [
+        "Settings, Set page:",
+        " SongRoot,SongScale,",
+        " ChordTrk.",
+        "Scale/Root = Song:",
+        " plays song's key.",
+        "Shift+scale pad:",
+        " song scale.",
+        "Shift+root key:",
+        " song root.",
+        "Yellow: song's.",
+        "Shift+Sustain:",
+        " Follow Off, Bass,",
+        " Chord, Arp.",
+        "Blue pad: chord trk.",
+        "Green: followers.",
+        "Split: Settings,",
+        " Track page."
       ]
     },
     {

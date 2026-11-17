@@ -58,8 +58,16 @@ enum {
     E1_P_CHANNEL, E1_P_OUTPUT, E1_P_MUTE, E1_P_DIR, E1_P_TAIL, E1_P_PHRASERATE,
     E1_P_CCMODE, E1_P_SLEW, E1_P_LOOP,
     E1_P_DENSITY, E1_P_DICETYPE, E1_P_AUTOROLL, E1_P_DICELEN,
+    E1_P_FOLLOW, E1_P_SPLIT,
     E1_NP
 };
+
+/* Scale and Root take E1_SONG to follow the set's song scale and root. The
+ * eight oldest scales keep their numbers so old save files load unchanged. */
+#define E1_SONG   (-1)
+#define E1_SCALES 17
+/* Follow: what a note track takes from the set's chord track. */
+enum { E1_FOLLOW_OFF = 0, E1_FOLLOW_BASS, E1_FOLLOW_CHORD, E1_FOLLOW_ARP };
 
 #define E1_DIVISIONS 15
 extern const char *const e1_division_names[E1_DIVISIONS];
@@ -145,6 +153,7 @@ typedef struct {
     int64_t  rt_T;         /* track time of the last retrigger step played */
     uint8_t  aud_n, aud_ch, aud_ports, aud_note[E1_POOL];   /* notes held by an audition */
     int64_t  ar_idx;       /* auto roll period last seen */
+    uint32_t split_n;      /* hits counted for Split */
     uint8_t  dhist_n;      /* earlier rolls kept for Back */
     e1_dice_snap_t dhist[E1_DICE_HISTORY];
 } e1_track_t;
@@ -160,6 +169,9 @@ typedef struct {
     double   origin;       /* tick at which track time 0 fell */
     uint32_t cc_rr;
     uint32_t nonce;        /* stirs one-off random picks */
+    uint8_t  song_root;    /* 0..11, what Root = Song means */
+    uint8_t  song_scale;   /* 0..E1_SCALES-1, what Scale = Song means */
+    uint8_t  chord_track;  /* 0 off, else the track (1..16) whose notes are the chord */
 } e1_engine_t;
 
 /* ports (E1_PORT_* bits), status, data1, data2 */
@@ -208,9 +220,15 @@ uint32_t e1_cycles_edited(const e1_track_t *t);
 uint64_t e1_steps_edited(const e1_track_t *t);   /* steps that carry their own values */
 
 int  e1_ports(const e1_engine_t *e, const e1_track_t *t);
+/* The chord the chord track plays now, ascending MIDI notes in out[E1_POOL].
+ * Returns the note count, 0 with no chord track or an empty one. */
+int  e1_chord(const e1_engine_t *e, int *out);
+/* Bit per track that takes its notes from the chord right now. */
+uint32_t e1_followers(const e1_engine_t *e);
 
 /* Parameters by text.
- *   track  0..15, or -1 for the global keys "dest" and "seed".
+ *   track  0..15, or -1 for the global keys "dest", "seed", "songroot",
+ *          "songscale" and "chordtrack" (0 = off, 1..16).
  *   val    a number, an option name, or a relative step "d+1" / "d-3".
  * Track keys:
  *   <param>          base value, or the picked cycles while edit_mask is set

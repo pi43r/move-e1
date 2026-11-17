@@ -451,35 +451,50 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
         <thead><tr><th>Knob</th><th>Name</th><th>What it does</th><th>Shift</th></tr></thead>
         <tbody>
           <tr><td>1</td><td>Vel</td><td>Velocity, 1 to 127.</td><td>Prob: above zero drops single notes, below zero drops a hit with its repeats.</td></tr>
-          <tr><td>2</td><td>Sustain</td><td>Note length. 50 is one step.</td><td></td></tr>
+          <tr><td>2</td><td>Sustain</td><td>Note length. 50 is one step.</td><td>Follow: Off, Bass, Chord or Arp. See Harmony.</td></tr>
           <tr><td>3</td><td>Pitch</td><td>Moves the pool in scale steps.</td><td>Harmony: moves one pool note per click.</td></tr>
           <tr><td>4</td><td>Length</td><td>Bars before the track starts over, or Off.</td><td>Quant: when a queued pattern starts.</td></tr>
           <tr><td>5</td><td>Accent</td><td>How much Groove changes velocity.</td><td>Groove: a velocity shape over 16 steps.</td></tr>
           <tr><td>6</td><td>Timing</td><td>Swing.</td><td>Delay: shifts the whole track by up to half a step.</td></tr>
-          <tr><td>7</td><td>Scale</td><td>Chrom, Major, Minor, Penta, Hira, Iwato, Tetra, Dorian.</td><td>Root.</td></tr>
+          <tr><td>7</td><td>Scale</td><td>Song, or one of 17 scales. See Harmony.</td><td>Root: Song, or C to B.</td></tr>
           <tr><td>8</td><td>Chan</td><td>MIDI channel.</td><td>Output: Global, Move, Computer or Both.</td></tr>
         </tbody>
       </table>
     </div>
     <p>On a CC track, knob 1 is Send (Pulse, Change or Glide) and knob 2 is Slew, the glide speed. Knobs 3, 5 and 7 are unused. On CC A and CC B, knobs 1 to 8 are CC lanes 1 to 16. A lane is Off until you turn it up. <kbd>Shift</kbd> + knob sets the lane's CC number.</p>
     <h3>Settings</h3>
-    <p>Open it from <kbd>Menu</kbd>. <kbd>Back</kbd> leaves.</p>
+    <p>Open it from <kbd>Menu</kbd>. <kbd>Back</kbd> leaves. Settings has two pages. Turn the jog wheel to switch. The Set page (header E-1 SET) holds what belongs to the whole set. The Track page (header names the track) holds settings of the selected tracks.</p>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Knob</th><th>Name</th><th>What it does</th><th>Shift</th></tr></thead>
+        <thead><tr><th>Knob</th><th>Set page</th><th>Track page</th><th>Track page, Shift</th></tr></thead>
         <tbody>
-          <tr><td>1</td><td>Dest</td><td>Where tracks play: Move, Computer or Both.</td><td>Rnd: chance that random amounts apply.</td></tr>
-          <tr><td>2</td><td>Clock</td><td>Move, Internal or Computer.</td><td>Rate: how often random values change.</td></tr>
-          <tr><td>3</td><td>Tempo</td><td>Internal tempo, 20 to 300 BPM.</td><td>Grid: swing on single steps, pairs or fours.</td></tr>
-          <tr><td>4</td><td>ClkOut</td><td>Send MIDI clock to the computer.</td><td>Loop: Free, or 1, 2, 4 or 8 bars after which chance and random values repeat.</td></tr>
-          <tr><td>5</td><td>Quant</td><td>When a queued pattern starts.</td><td>AutoRol: Off, or new dice every 1, 2, 4 or 8 bars.</td></tr>
-          <tr><td>6</td><td>Type</td><td>Note or CC track.</td><td>Mute</td></tr>
-          <tr><td>7</td><td>Repeat</td><td>Choke: a new hit cuts the last one. Tail: they overlap.</td><td>Dir: Mono styles play up or down.</td></tr>
-          <tr><td>8</td><td>PhrRate</td><td>Phrase length: x1 is 4 bars, x2 is 2, /2 is 8.</td><td>DiceLen: the Lengths dice, On or Off.</td></tr>
+          <tr><td>1</td><td>Dest: where tracks play, Move, Computer or Both.</td><td>Type: Note or CC track.</td><td>Rnd: chance that random amounts apply.</td></tr>
+          <tr><td>2</td><td>Clock: Move, Internal or Computer.</td><td>Repeat: Choke, a new hit cuts the last one. Tail: they overlap.</td><td>Rate: how often random values change.</td></tr>
+          <tr><td>3</td><td>Tempo: internal tempo, 20 to 300 BPM.</td><td>PhrRate: phrase length, x1 is 4 bars, x2 is 2, /2 is 8.</td><td>Grid: swing on single steps, pairs or fours.</td></tr>
+          <tr><td>4</td><td>ClkOut: send MIDI clock to the computer.</td><td>Follow: Off, Bass, Chord or Arp. See Harmony.</td><td>Loop: Free, or 1, 2, 4 or 8 bars after which chance and random values repeat.</td></tr>
+          <tr><td>5</td><td>Quant: when a queued pattern starts.</td><td>Split: Off, or a track. See Harmony.</td><td>AutoRol: Off, or new dice every 1, 2, 4 or 8 bars.</td></tr>
+          <tr><td>6</td><td>SongRoot: the song's root note.</td><td>Mute</td><td></td></tr>
+          <tr><td>7</td><td>SongScale: the song's scale.</td><td>Dir: Mono styles play up or down.</td><td></td></tr>
+          <tr><td>8</td><td>ChordTrk: Off, or the chord track 1 to 16.</td><td>DiceLen: the Lengths dice, On or Off.</td><td></td></tr>
         </tbody>
       </table>
     </div>
-    <p>Knobs 1 to 5 are global. Knobs 6 to 8 and the <kbd>Shift</kbd> functions apply to the selected tracks.</p>
+
+    <h3>Harmony</h3>
+    <p><b>Song root and scale.</b> A set has one root and one scale, C minor in a new set. A track whose Scale or Root says Song plays in the song's key. Pitched tracks in Init and the starter sets use Song, so changing the song moves them all. A track with its own scale or root keeps it.</p>
+    <p>Set the song on the Settings Set page, or from any track: touch Scale (Right page, knob 7) and hold <kbd>Shift</kbd> while you tap a scale pad. <kbd>Shift</kbd> + knob 7 shows the root keyboard; hold <kbd>Shift</kbd> and tap a key to set the song root. The selected track keeps its own setting.</p>
+    <p>On the Scale and Root pads, white is the track's choice, yellow is the song's, and the yellow pad at the lower right picks Song. With Song chosen the knob reads SONG and the list shows what it stands for, for example S:MINOR. The list footer names the song key.</p>
+    <p>Scales: Chrom, Major, Minor, Penta, Hira, Iwato, Tetra, Dorian, Phryg (Phrygian), Lydian, Mixo (Mixolydian), Locri (Locrian), HarMin (harmonic minor), MelMin (melodic minor), Blues, MinPen (minor pentatonic), Whole (whole tone). Plus and Minus page the scale pads.</p>
+    <p><b>Chord track.</b> Set ChordTrk on the Settings Set page. Its pool, moved by its own Pitch and Harmony in each cycle and step, is the current chord. Its pad lights blue.</p>
+    <p><b>Follow.</b> <kbd>Shift</kbd> + knob 2 on the Right page (or Follow on the Settings Track page) sets what a note track takes from the chord track:</p>
+    <ul>
+      <li>Off: the track plays its own pool.</li>
+      <li>Bass: the chord's lowest note, in the octave of the track's own lowest pool note.</li>
+      <li>Chord: the whole chord in that octave, shaped by the track's Voicing and Style.</li>
+      <li>Arp: one chord note per hit, walked by the track's Style and Phrase. Poly styles play as their Mono form. Rolled Notes dice pick the chord notes.</li>
+    </ul>
+    <p>Tracks that follow light green, and the footer shows the role, for example BASS OF T10. With ChordTrk Off, or an empty or CC chord track, every track plays its own pool.</p>
+    <p><b>Split.</b> Split on the Settings Track page sends every second hit of the track out on another track's channel and output. Tap Split's pads to pick the track, tap it again for Off.</p>
   </section>
 
   <section id="pads">
@@ -667,6 +682,7 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
       <li>The set name and the names of the saved patterns.</li>
       <li>For each track: name, type, channel, output and mute.</li>
       <li>For CC tracks, the CC number of each of the 16 lanes (button CC).</li>
+      <li>The song root, song scale and chord track.</li>
     </ul>
     <p>A change reaches the Move as soon as you leave the field. Changes made on the Move show up on the page.</p>
   </section>

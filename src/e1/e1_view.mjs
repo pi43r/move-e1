@@ -15,8 +15,16 @@ export const DESTS = ["Move", "Computer", "Both"];
 export const QUANTS = ["1/4", "1/2", "1 bar", "2 bars", "4 bars", "8 bars"];
 export const STYLES = ["PolyFix", "PolyRamp", "PolyClimb", "MonoFix", "MonoRamp", "MonoClimb", "Dice"];
 export const PHRASES = ["Cad1", "Cad2", "Cad3", "Cad4", "Saw", "Tri", "Sine", "Pulse", "Dice"];
-export const SCALES = ["Chrom", "Major", "Minor", "Penta", "Hira", "Iwato", "Tetra", "Dorian"];
+export const SCALES = ["Chrom", "Major", "Minor", "Penta", "Hira", "Iwato", "Tetra", "Dorian",
+    "Phryg", "Lydian", "Mixo", "Locri", "HarMin", "MelMin", "Blues", "MinPen", "Whole"];
 export const ROOTS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+/* A track's Scale and Root lists start with Song (engine value -1): follow the set. */
+export const SONG = "Song";
+export const TRACK_SCALES = [SONG].concat(SCALES);
+export const TRACK_ROOTS = [SONG].concat(ROOTS);
+export const FOLLOWS = ["Off", "Bass", "Chord", "Arp"];
+/* Chord track and Split: Off, or a track (engine values 0..16). */
+export const TRACK_CHOICES = ["Off"].concat(Array.from({ length: 16 }, (_, i) => "T" + (i + 1)));
 export const GROOVES = ["Agogo", "Congas", "Timbal", "Bongo", "Saw", "Tri", "Sine", "Pulse", "Dice"];
 export const REPEATS_INF = 49;
 export const LOOPS = ["Free", "1", "2", "4", "8"];   /* Loop lock: bars after which chance and random come round */
@@ -33,6 +41,8 @@ export const DICE = [
 const SCALE_DEG = [
     [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], [0, 2, 4, 5, 7, 9, 11], [0, 2, 3, 5, 7, 8, 10], [0, 2, 4, 7, 9],
     [0, 2, 3, 7, 8], [0, 1, 5, 6, 10], [0, 4, 7, 10], [0, 2, 3, 5, 7, 9, 10],
+    [0, 1, 3, 5, 7, 8, 10], [0, 2, 4, 6, 7, 9, 11], [0, 2, 4, 5, 7, 9, 10], [0, 1, 3, 5, 6, 8, 10],
+    [0, 2, 3, 5, 7, 8, 11], [0, 2, 3, 5, 7, 9, 11], [0, 3, 5, 6, 7, 10], [0, 3, 5, 7, 10], [0, 2, 4, 6, 8, 10],
 ];
 
 export const noteName = (n) => ROOTS[n % 12] + (Math.floor(n / 12) - 2);
@@ -63,8 +73,8 @@ export const TRACK_PARAMS = [
     { key: "style", name: "Style", type: "enum", options: STYLES, div: 6 },
     { key: "range", name: "Range", type: "int", min: -16, max: 16, div: 4, rnd: 1 },
     { key: "phrase", name: "Phrase", type: "enum", options: PHRASES, div: 6 },
-    { key: "scale", name: "Scale", type: "enum", options: SCALES, div: 6 },
-    { key: "root", name: "Root", type: "enum", options: ROOTS, div: 5 },
+    { key: "scale", name: "Scale", type: "enum", options: TRACK_SCALES, base: -1, div: 6 },
+    { key: "root", name: "Root", type: "enum", options: TRACK_ROOTS, base: -1, div: 5 },
     { key: "accent", name: "Accent", type: "int", min: -100, max: 100, div: 1, rnd: 1 },
     { key: "groove", name: "Groove", type: "enum", options: GROOVES, div: 6 },
     { key: "timing", name: "Timing", type: "int", min: -50, max: 50, div: 1, rnd: 1 },
@@ -84,6 +94,8 @@ export const TRACK_PARAMS = [
     { key: "dicetype", name: "DiceTyp", type: "int", min: 1, max: 16, div: 4 },
     { key: "autoroll", name: "AutoRol", type: "enum", options: AUTOS, div: 8 },
     { key: "dicelen", name: "DiceLen", type: "enum", options: ["Off", "On"], div: 8 },
+    { key: "follow", name: "Follow", type: "enum", options: FOLLOWS, div: 8 },
+    { key: "split", name: "Split", type: "enum", options: TRACK_CHOICES, div: 4 },
 ];
 
 export const GLOBAL_PARAMS = [
@@ -92,6 +104,9 @@ export const GLOBAL_PARAMS = [
     { key: "bpm", name: "Tempo", type: "int", min: 20, max: 300, div: 1 },
     { key: "clockout", name: "ClkOut", type: "enum", options: ["Off", "On"], div: 8 },
     { key: "quant", name: "Quant", type: "enum", options: QUANTS, div: 6 },
+    { key: "songroot", name: "SongRoot", type: "enum", options: ROOTS, div: 5 },
+    { key: "songscale", name: "SongScale", type: "enum", options: SCALES, div: 6 },
+    { key: "chordtrack", name: "ChordTrk", type: "enum", options: TRACK_CHOICES, div: 4 },
 ];
 export const GLOBAL_KEYS = new Set(GLOBAL_PARAMS.map((p) => p.key));
 
@@ -114,7 +129,7 @@ export const NOTE_PAGES = [
     LEFT,
     { name: "Right",
         keys: ["velocity", "sustain", "pitch", "length", "accent", "timing", "scale", "channel"],
-        alt: ["prob", null, "harmony", "quant", "groove", "delay", "root", "output"] },
+        alt: ["prob", "follow", "harmony", "quant", "groove", "delay", "root", "output"] },
 ];
 const lanes = (a, p) => Array.from({ length: 8 }, (_, i) => p + (a + i));
 export const CC_PAGES = [
@@ -127,11 +142,18 @@ export const CC_PAGES = [
     { name: "CC A", keys: lanes(1, "cc"), alt: lanes(1, "ccn") },
     { name: "CC B", keys: lanes(9, "cc"), alt: lanes(9, "ccn") },
 ];
-export const SETTINGS_PAGE = {
-    name: "Settings",
-    keys: ["dest", "clock", "bpm", "clockout", "quant", "type", "tail", "phraserate"],
-    alt: ["random", "rate", "swinggrid", "loop", "autoroll", "mute", "dir", "dicelen"],
-};
+/* Settings has two pages, so what belongs to the whole set and what belongs
+ * to the selected track never share a screen: "Set" (the header says E-1 SET)
+ * and "Track" (the header names the track). */
+export const SETTINGS_PAGES = [
+    { name: "Set",
+        keys: ["dest", "clock", "bpm", "clockout", "quant", "songroot", "songscale", "chordtrack"],
+        alt: [null, null, null, null, null, null, null, null] },
+    { name: "Track",
+        keys: ["type", "tail", "phraserate", "follow", "split", "mute", "dir", "dicelen"],
+        alt: ["random", "rate", "swinggrid", "loop", "autoroll", null, null, null] },
+];
+export const SETTINGS_PAGE = SETTINGS_PAGES[0];
 
 export const DEFAULT_NAMES = ["KICK", "SNARE", "HAT", "CLAP", "PERC", "TOM", "RIM", "SHAKE",
     "BASS", "CHORD", "LEAD", "CC 1", "CC 2", "CC 3", "CC 4", "CC 5"];
@@ -202,7 +224,7 @@ export function valuesFrom(snap, pkeys) {
     (pkeys || []).forEach((k, i) => {
         const m = metaFor(k);
         const n = snap.p ? snap.p[i] : 0;
-        v[k] = m && m.type === "enum" ? m.options[n] : String(n);
+        v[k] = m && m.type === "enum" ? m.options[n - (m.base | 0)] : String(n);
         if (snap.rn) v["r." + k] = String(snap.rn[i] | 0);
     });
     for (let i = 0; i < 16; i++) {
@@ -215,14 +237,26 @@ export function valuesFrom(snap, pkeys) {
     v.bpm = String(Math.round(snap.bpm || 120));
     v.clockout = snap.co ? "On" : "Off";
     v.quant = QUANTS[snap.qn === undefined ? 2 : snap.qn | 0];
+    v.songroot = ROOTS[snap.sr | 0] || "C";
+    v.songscale = SCALES[snap.ss === undefined ? 2 : snap.ss | 0] || "Minor";
+    v.chordtrack = TRACK_CHOICES[snap.ct | 0] || "Off";
     return v;
 }
 
 const SIGNED = new Set(["prob", "ramp", "pace", "delay", "pitch", "harmony", "voicing", "range", "accent", "timing"]);
 
-export function displayFor(key, raw) {
+/* What Scale or Root comes to: the track's own, or the song's while it says Song. */
+export function resolved(v, key) {
+    const own = (v || {})[key];
+    return own === SONG || own === undefined ? (v || {})["song" + key] : own;
+}
+/* "SONG (MINOR)": the Song entry spelled out with what it stands for now. */
+export function songLabel(v, key) { return "SONG (" + String((v || {})["song" + key] || "").toUpperCase() + ")"; }
+
+export function displayFor(key, raw, v) {
     if (raw === undefined || raw === null) return null;
     const n = parseInt(raw, 10);
+    if ((key === "scale" || key === "root") && raw === SONG) return "S:" + String((v || {})["song" + key] || "").toUpperCase();
     if (isLane(key) && n < 0) return "OFF";
     if (key === "repeats" && n >= REPEATS_INF) return "INF";
     if ((SIGNED.has(key) || isRnd(key)) && n > 0) return "+" + raw;
@@ -306,7 +340,9 @@ const DIV_SLOTS = { 0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 10: 7, 11: 8, 12: 
 const COARSE = [-1, -0.5, -0.25, 0, 0.25, 0.5, 1];
 const NUDGE = [-5, -2, -1, null, 1, 2, 5];
 
-const ENUM_COL = { length: COL.green, quant: COL.green, scale: COL.blue, loop: COL.green, autoroll: COL.green };
+const ENUM_COL = { length: COL.green, quant: COL.green, scale: COL.blue, loop: COL.green, autoroll: COL.green, follow: COL.green };
+/* Track pads: the chord track is blue, tracks that follow it are green. */
+const SCALE_PADS = 15;                               /* scales per pad page; pad 16 is Song */
 /* Dice pads: bright while the lane plays, dim while it does not. */
 const DICE_COL = [[COL.orange, COL.dimOrange], [COL.red, COL.dimRed], [COL.green, COL.darkGreen],
     [COL.brightBlue, COL.dimBlue], [COL.cyan, COL.dimCyan]];
@@ -377,17 +413,45 @@ export function padModel(st) {
     const title = m.name.toUpperCase();
     const page = st.padPage | 0;
 
-    if (key === "pitch" || key === "root") {
-        const scale = SCALE_DEG[Math.max(0, SCALES.indexOf(v.scale))];
-        const root = Math.max(0, ROOTS.indexOf(v.root));
+    if (key === "scale" || key === "songscale") {
+        /* Blue: scales. White: the one chosen. Yellow: the song's scale, and
+         * the Song pad at the end. Shift + pad sets the song's scale. */
+        const track = key === "scale";
+        const song = SCALES.indexOf(v.songscale);
+        for (let i = 0; i < SCALE_PADS; i++) {
+            const idx = page * SCALE_PADS + i;
+            if (idx >= SCALES.length) break;
+            let c = SCALES[idx] === cur ? COL.white : COL.blue;
+            if (track && cur === SONG && idx === song) c = COL.yellow;
+            pads[i] = { c, act: set(key, SCALES[idx], m.name + " " + SCALES[idx]) };
+        }
+        if (track) pads[15] = { c: cur === SONG ? COL.white : COL.yellow, act: set(key, SONG, "Scale " + songLabel(v, "scale")) };
+        return { title: track ? "SCALE" : "SONG SCALE", pads };
+    }
+    if (key === "chordtrack" || key === "split") {
+        /* One pad per track; the chosen one again turns it off. */
+        for (let i = 0; i < 16; i++) {
+            const on = m.options.indexOf(cur) === i + 1;
+            const self = key === "split" && i === (st.focus | 0);
+            pads[i] = { c: on ? COL.white : (self ? COL.off : (isCCBit(s, i) ? COL.dimCyan : COL.dimOrange)),
+                act: self ? null : set(key, on ? 0 : i + 1, m.name + (on ? " OFF" : " T" + (i + 1))) };
+        }
+        return { title: key === "split" ? "SPLIT TO" : "CHORD TRACK", pads };
+    }
+
+    if (key === "pitch" || key === "root" || key === "songroot") {
+        const scale = SCALE_DEG[Math.max(0, SCALES.indexOf(resolved(v, "scale")))];
+        const root = Math.max(0, ROOTS.indexOf(key === "songroot" ? v.songroot : resolved(v, "root")));
         const oct = st.kbOct | 0;
         const pool = new Set(s.po || []);
         for (let i = 0; i < 16; i++) {
             const pc = keyboardNote(i);
             if (pc < 0) continue;
             const black = i < 8;
-            if (key === "root") {
-                pads[i] = { c: pc === root ? COL.pink : (black ? COL.blue : COL.white), act: set("root", ROOTS[pc], "ROOT " + ROOTS[pc]) };
+            if (key === "root" || key === "songroot") {
+                /* Pink: the root chosen. Yellow: the song's root while the track follows it. */
+                const mark = key === "root" && cur === SONG ? COL.yellow : COL.pink;
+                pads[i] = { c: pc === root ? mark : (black ? COL.blue : COL.white), act: set(key, ROOTS[pc], "ROOT " + ROOTS[pc]) };
                 continue;
             }
             const note = 12 * (oct + 2) + pc;
@@ -406,7 +470,8 @@ export function padModel(st) {
             pads[7] = { c: above ? COL.pink : COL.dimPink, act: { k: "oct", d: 1 } };
             pads[15] = { c: below ? COL.pink : COL.dimPink, act: { k: "oct", d: -1 } };
         }
-        return { title: key === "pitch" ? "NOTES C" + oct : "ROOT", pads };
+        if (key === "root") pads[15] = { c: cur === SONG ? COL.white : COL.yellow, act: set("root", SONG, "Root " + songLabel(v, "root")) };
+        return { title: key === "pitch" ? "NOTES C" + oct : (key === "root" ? "ROOT" : "SONG ROOT"), pads };
     }
 
     if (key === "division" || key === "time" || key === "rate") {
@@ -512,6 +577,7 @@ function ratePads(pads, v) {
 /* How many pad pages a parameter has (for the +/- buttons). */
 export function padPages(key) {
     const m = metaFor(key);
+    if (key === "scale" || key === "songscale") return Math.ceil(SCALES.length / SCALE_PADS);
     if (!m || m.type === "enum" || m.min < 0) return 1;
     if (key === "repeats") return 4;
     const span = m.max - m.min;
@@ -538,6 +604,11 @@ export function ledFrame(st) {
         if (quiet) c = sel ? COL.lightGrey : COL.off;
         else if (hit) c = COL.white;
         else c = sel ? typeColor(s, t) : typeDark(s, t);
+        /* Harmony roles: the chord track is blue, tracks following it green. */
+        if (!quiet && !hit && !isCCBit(s, t)) {
+            if (((s.fo | 0) >> t) & 1) c = sel ? COL.green : COL.darkGreen;
+            else if ((s.ct | 0) === t + 1) c = sel ? COL.brightBlue : COL.dimBlue;
+        }
         if (((st.mutePend | 0) >> t) & 1) c = COL.red;
         if (st.copySrc === t) c = COL.green;
         out[trackPadNote(t)] = c;
@@ -581,12 +652,14 @@ export function ledFrame(st) {
 
 export function currentPages(st) {
     const s = st.snap || {};
-    return st.settings ? [SETTINGS_PAGE] : pagesFor(isCCBit(s, st.focus));
+    return st.settings ? SETTINGS_PAGES : pagesFor(isCCBit(s, st.focus));
 }
+
+const settingsIndex = (st) => Math.max(0, Math.min(SETTINGS_PAGES.length - 1, st.setPage | 0));
 
 export function currentPage(st) {
     const pages = currentPages(st);
-    return st.settings ? SETTINGS_PAGE : pages[pageIndex(pages, st.pageName)];
+    return st.settings ? SETTINGS_PAGES[settingsIndex(st)] : pages[pageIndex(pages, st.pageName)];
 }
 
 /* The eight keys under the knobs right now: Shift shows the second layer,
@@ -642,6 +715,10 @@ export function footerFor(st) {
         out.push(["EDIT", "C" + cut(ids.join("+"), 5)]);
         return out;
     }
+    /* Harmony role of the selected track, in place of the pattern name. */
+    const f = st.focus | 0, ct = s.ct | 0, role = (st.values || {}).follow;
+    if (ct === f + 1 && !isCCBit(s, f)) { out.push(["CHORD", "TRACK"]); return out; }
+    if (((s.fo | 0) >> f) & 1 && role && role !== "Off") { out.push([role.toUpperCase(), "OF T" + ct]); return out; }
     if (st.queued >= 0 && st.queued !== undefined && st.queued !== null) out.push(["NEXT", "P" + (st.queued + 1)]);
     else if (st.current >= 0 && st.patterns && st.patterns[st.current]) out.push(["P" + (st.current + 1), cut(st.patterns[st.current].name || "", 7).toUpperCase()]);
     if (!out.length) out.push(["", String(Math.round(s.bpm || 120)) + " BPM"]);
@@ -652,10 +729,10 @@ export function footerFor(st) {
 export function pageOptions(st, lib) {
     const s = st.snap || {};
     const pages = currentPages(st);
-    const pi = st.settings ? 0 : pageIndex(pages, st.pageName);
+    const pi = st.settings ? settingsIndex(st) : pageIndex(pages, st.pageName);
     const pg = pages[pi];
     const keys = knobKeys(st);
-    let title = st.settings ? "E-1" : "T" + (st.focus + 1) + " " + cut(trackName(st, st.focus), 8);
+    let title = st.settings && pi === 0 ? "E-1 SET" : "T" + (st.focus + 1) + " " + cut(trackName(st, st.focus), 8);
     if (!st.settings && st.held && st.held.size > 1) title = st.held.size + " TRACKS";
     let label = pg.name;
     if (((s.em | 0) || (s.sm && s.sm !== "0")) && !st.settings) title = cut(title, 8) + " EDIT";
@@ -671,7 +748,7 @@ export function pageOptions(st, lib) {
         pageCount: pages.length,
         touched: st.touched,
         viz: [],
-        displayFor: (k, v) => displayFor(k, v),
+        displayFor: (k, v) => displayFor(k, v, st.values),
         footer: footerFor(st),
     };
 }
@@ -756,8 +833,19 @@ export function listFor(st) {
     const key = st.listKey;
     const m = key ? metaFor(key) : null;
     if (!m || !m.options) return null;
-    const cur = Math.max(0, m.options.indexOf((st.values || {})[key]));
-    return { title: m.name.toUpperCase(), options: m.options, cur };
+    const v = st.values || {};
+    const cur = Math.max(0, m.options.indexOf(v[key]));
+    const titles = { songroot: "SONG ROOT", songscale: "SONG SCALE" };
+    /* Scale and Root lists say what the song is, so Song is never a riddle. */
+    const hint = key === "scale" || key === "root" ? "SONG IS " + String(v.songroot).toUpperCase() + " " + String(v.songscale).toUpperCase() : null;
+    /* The Song entry names what it plays: "SONG (C)", or "S:MINOR" where the full form will not fit. */
+    const song = (o) => {
+        if (o !== SONG) return o;
+        const full = songLabel(v, key), cols = m.options.length > 8;
+        return !cols || full.length <= 9 ? full : "S:" + String(v["song" + key] || "").toUpperCase();
+    };
+    const options = key === "scale" || key === "root" ? m.options.map(song) : m.options;
+    return { title: titles[key] || m.name.toUpperCase(), options, cur, hint };
 }
 
 export function drawValueList(ctx, st) {
@@ -787,7 +875,9 @@ export function drawValueList(ctx, st) {
         ctx.fillRect(126, TOP + Math.floor((45 - h) * pg / (pages - 1)), 2, h, 1);
     }
     const foot = n > per ? (l.cur + 1) + "/" + n : "";
-    ctx.print(1, 57, "TURN, OR TAP A PAD", 1);
+    let hint = l.hint || (foot ? "TURN OR TAP" : "TURN, OR TAP A PAD");
+    while (hint.length > 1 && ctx.textWidth(hint) + ctx.textWidth(foot) + 4 > 128) hint = hint.slice(0, -1);
+    ctx.print(1, 57, hint, 1);
     ctx.print(127 - ctx.textWidth(foot), 57, foot, 1);
     return true;
 }

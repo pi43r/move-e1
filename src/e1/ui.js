@@ -31,7 +31,7 @@ import {
 import {
     PERFORM, CLOCKS, DESTS, COL, BTN, STEP_BASE, GLOBAL_KEYS,
     valuesFrom, metaFor, ledFrame, pageOptions, drawLayer, LAYER_COL, currentPages, pageIndex, knobKeys,
-    padModel, padMode, padPages, padToTrack, padToSlot, trackName, AUTOS,
+    padModel, padMode, padPages, padToTrack, padToSlot, trackName, AUTOS, SONG, songLabel,
     knobLeds, drawSelection, drawValueList, selectedKnob, drawCycleStrip,
 } from "./e1_view.mjs";
 import { createLibrary, createMenu, starterSet } from "./e1_library.mjs";
@@ -60,7 +60,7 @@ const GESTURE_MS = 1200;        /* edits closer than this share one undo step */
 const IDENTITY = new Set(["name", "type", "channel", "output", "mute"]);
 
 const st = {
-    focus: 0, pageName: "Left", settings: false, stepPage: 0, touched: -1,
+    focus: 0, pageName: "Left", settings: false, setPage: 0, stepPage: 0, touched: -1,
     padKey: "steps", padPage: 0, kbOct: 3, selKnob: 0, listKey: null, listUntil: 0,
     shift: false, muteHeld: false, mutePend: 0, copyHeld: false, delHeld: false,
     randomHeld: false, tempHeld: false, tempLock: false, keepTemp: false, fzOn: false, fzLock: false, fzLen: 4, fzMask: 0xFFFF, muteLock: false, saveMode: false,
@@ -301,7 +301,7 @@ function turnKnob(i, delta) {
     showPadsFor(key);
 
     if (GLOBAL_KEYS.has(key)) {
-        if (key === "bpm" || key === "quant") { setP(key, rel(n)); edited(); return; }
+        if (key === "bpm" || key === "quant" || key === "songroot" || key === "songscale" || key === "chordtrack") { setP(key, rel(n)); edited(); return; }
         const opts = m.options;
         const cur = Math.max(0, opts.indexOf(st.values[key]));
         setGlobal(key, opts[Math.max(0, Math.min(opts.length - 1, cur + n))]);
@@ -636,8 +636,16 @@ function reselect() {
 }
 
 function changePage(d) {
-    if (st.settings) return;
     const p = pages();
+    if (st.settings) {                /* Set, then Track */
+        const n = Math.max(0, Math.min(p.length - 1, st.setPage + d));
+        if (n === st.setPage) return;
+        st.setPage = n;
+        knobAcc.fill(0);
+        reselect();
+        dirty = true;
+        return;
+    }
     const i = pageIndex(p, st.pageName);
     const n = Math.max(0, Math.min(p.length - 1, i + d));
     if (p[n].name === st.pageName) return;
@@ -722,6 +730,12 @@ function onSlot(i, on, vel) {
     case "diceback": diceBack(); break;
     case "autoroll": setAuto(act.value); break;
     case "set":
+        /* Shift + a scale or root pad sets the song's, whatever track is up. */
+        if (st.shift && (act.key === "scale" || act.key === "root") && act.value !== SONG) {
+            setGlobal("song" + act.key, act.value);
+            toast("SONG " + act.key, act.value);
+            break;
+        }
         if (GLOBAL_KEYS.has(act.key)) setGlobal(act.key, act.value);
         else setTrack(act.key, act.value);
         toast(st.padKey, (act.label || act.value).replace(/^\S+\s/, "") + " " + who());
@@ -997,7 +1011,7 @@ function applySet(id, set) {
     st.setId = id; st.setName = set.name;
     let extra = null;
     try { extra = JSON.parse(set.globals || "null"); } catch (e) { extra = null; }
-    if (extra && extra.g) setP("load:g", extra.g);
+    setP("load:g", (extra && extra.g) || "");      /* an older set without song settings: C minor, no chord track */
     const live = extra && Array.isArray(extra.live) ? extra.live
         : (st.current >= 0 && st.patterns[st.current] ? st.patterns[st.current].tracks : null);
     if (live) stageAll(live, "now");
@@ -1026,7 +1040,7 @@ const host = {
     act(name, a) {
         a = a || {};
         switch (name) {
-        case "settings.open": st.settings = true; reselect(); break;
+        case "settings.open": st.settings = true; st.setPage = 0; reselect(); break;
         case "set.save":
             if (st.setId) lib.saveSet(st.setId, setObject()); else st.setId = lib.createSet(st.setName, setObject());
             lib.setLast(st.setId); st.dirty = false; sessionDirty = true;

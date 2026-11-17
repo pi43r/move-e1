@@ -335,6 +335,10 @@ static void load_globals(e1_inst_t *s, const char *text)
 {
     char line[96];
     const char *p = text;
+    /* Sets saved before the song scale existed name none: C minor, no chord track. */
+    e1_set(&s->e, -1, "songroot", "C");
+    e1_set(&s->e, -1, "songscale", "Minor");
+    e1_set(&s->e, -1, "chordtrack", "0");
     while (p && *p) {
         const char *nl = strchr(p, '\n');
         size_t n = nl ? (size_t)(nl - p) : strlen(p);
@@ -344,7 +348,8 @@ static void load_globals(e1_inst_t *s, const char *text)
         if (eq) {
             *eq = 0;
             if (!strcmp(line, "clock") || !strcmp(line, "bpm") || !strcmp(line, "clockout") ||
-                !strcmp(line, "dest") || !strcmp(line, "seed") || !strcmp(line, "quant"))
+                !strcmp(line, "dest") || !strcmp(line, "seed") || !strcmp(line, "quant") ||
+                !strcmp(line, "songroot") || !strcmp(line, "songscale") || !strcmp(line, "chordtrack"))
                 e1_set_param(s, line, eq + 1);
         }
         p = nl ? nl + 1 : NULL;
@@ -374,7 +379,8 @@ static void e1_set_param(void *inst, const char *key, const char *val)
         }
         const char *r2 = NULL;
         int wt = parse_track_key(k, &r2);
-        if (wt < 0) return;                       /* the page reaches tracks only */
+        int song = !strcmp(k, "songroot") || !strcmp(k, "songscale") || !strcmp(k, "chordtrack");
+        if (wt < 0 && !song) return;              /* the page reaches tracks and the song settings */
         e1_set_param(inst, k, val);
         s->web_rev++;
         return;
@@ -486,6 +492,7 @@ static void e1_set_param(void *inst, const char *key, const char *val)
         return;
     }
     if (strcmp(key, "seed") == 0) { e1_set(&s->e, -1, "seed", val); return; }
+    if (!strcmp(key, "songroot") || !strcmp(key, "songscale") || !strcmp(key, "chordtrack")) { e1_set(&s->e, -1, key, val); return; }
 }
 
 /* One compact answer per frame for the UI. Per-track bit sets first, then
@@ -513,6 +520,7 @@ static int json_ui(e1_inst_t *s, char *buf, int len)
     PUT("\"rp\":%u,\"rt\":\"%llx\",", (unsigned)rp, (unsigned long long)f->retrig);
     PUT("\"dc\":%d,\"dm\":%d,\"dh\":%d,\"lv\":\"%llx\",", e1_dice_rolled(f), e1_dice_active(&s->e, s->focus), f->dhist_n,
         (unsigned long long)e1_live_mask(&s->e, s->focus, f->edit_mask || s->e.running ? dc : -1, f->p_fill));
+    PUT("\"sr\":%d,\"ss\":%d,\"ct\":%d,\"fo\":%u,", s->e.song_root, s->e.song_scale, s->e.chord_track, (unsigned)e1_followers(&s->e));
     PUT("\"cy\":%d,\"pc\":%d,\"ce\":%u,\"em\":%u,\"sn\":%d,", dc, f->cur_cycle, (unsigned)e1_cycles_edited(f),
         (unsigned)f->edit_mask, e1_steps(&s->e, s->focus, f->edit_mask ? dc : -1));
     PUT("\"st\":[");
@@ -546,7 +554,8 @@ static int json_ui(e1_inst_t *s, char *buf, int len)
 static int json_state(e1_inst_t *s, char *buf, int len)
 {
     int pos = 0;
-    PUT("{\"rev\":\"%u\"", (unsigned)s->rev);
+    PUT("{\"rev\":\"%u\",\"song_root\":\"%d\",\"song_scale\":\"%d\",\"chord_track\":\"%d\"", (unsigned)s->rev,
+        s->e.song_root, s->e.song_scale, s->e.chord_track);
     for (int i = 0; i < E1_TRACKS; i++) {
         const e1_track_t *t = &s->e.t[i];
         char nm[2 * E1_NAME_LEN + 1]; int k = 0;

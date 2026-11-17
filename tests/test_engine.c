@@ -1626,6 +1626,110 @@ static void run_probe(const char *name, const char *why)
     CHECKM(code == 0, "probe %s exited %d: %s", name, code, why);
 }
 
+/* 0.4: song root and scale, chord track and Follow, Split. */
+static void test_harmony(void)
+{
+    e1_engine_t *e = eng_new(); cap_t *c = cap_new();
+    grp_t g[64]; int n; char b[64];
+
+    /* Song resolves to the set's scale and root, and moves with it. */
+    setup(e); fresh(e, 0); S(e, 0, "pool", "60"); S(e, 0, "scale", "Major"); S(e, 0, "root", "D"); S(e, 0, "pitch", "1");
+    char own[32]; snprintf(own, sizeof own, "%s", chord_of(e, c, 0));
+    CHECK(strcmp(own, "61") == 0);
+    S(e, -1, "songscale", "Major"); S(e, -1, "songroot", "D"); S(e, 0, "scale", "Song"); S(e, 0, "root", "Song");
+    CHECK(strcmp(chord_of(e, c, 0), own) == 0);
+    CHECK(e1_get(e, 0, "scale", b, sizeof b) > 0 && !strcmp(b, "Song") && e->t[0].v[E1_P_SCALE] == E1_SONG);
+    CHECK(e1_get(e, -1, "songscale", b, sizeof b) > 0 && !strcmp(b, "Major"));
+    S(e, -1, "songscale", "Minor"); S(e, -1, "songroot", "C");
+    CHECK(strcmp(chord_of(e, c, 0), "62") == 0);
+    S(e, -1, "songscale", "Lydian"); S(e, 0, "pitch", "3");   /* C D E F#: 60 + 3 degrees */
+    CHECK(strcmp(chord_of(e, c, 0), "66") == 0);
+    S(e, -1, "songscale", "Whole");
+    CHECK(strcmp(chord_of(e, c, 0), "66") == 0);
+    S(e, -1, "songscale", "Blues"); S(e, 0, "pitch", "2");    /* C Eb F F# */
+    CHECK(strcmp(chord_of(e, c, 0), "65") == 0);
+    S(e, 0, "scale", "d+1");                                  /* Song -> Chrom */
+    CHECK(e->t[0].v[E1_P_SCALE] == 0);
+    /* Init: pitched tracks follow the song, C minor. */
+    e1_init(e);
+    CHECK(e->t[9].v[E1_P_SCALE] == E1_SONG && e->t[9].v[E1_P_ROOT] == E1_SONG && e->song_scale == 2 && e->song_root == 0 && e->chord_track == 0);
+
+    /* Old dumps: named scales keep their old numbers, missing keys take the defaults. */
+    static const char *OLD[8] = { "Chrom", "Major", "Minor", "Penta", "Hira", "Iwato", "Tetra", "Dorian" };
+    for (int i = 0; i < 8; i++) {
+        char txt[96]; snprintf(txt, sizeof txt, "name=OLD\nscale=%s\nroot=A\npool=60\n", OLD[i]);
+        e1_load_track(e, 3, txt);
+        CHECK(e->t[3].v[E1_P_SCALE] == i && e->t[3].v[E1_P_ROOT] == 9 && e->t[3].v[E1_P_FOLLOW] == 0 && e->t[3].v[E1_P_SPLIT] == 0);
+    }
+    setup(e); fresh(e, 0); S(e, -1, "songscale", "Major"); S(e, -1, "songroot", "F");
+    e1_load_track(e, 0, "name=OLD\nscale=Minor\nroot=C\npool=60\npitch=1\nchannel=1\nmute=Off\n");
+    CHECK(strcmp(chord_of(e, c, 0), "62") == 0);              /* still C minor */
+    /* The global dump carries the song and the chord track. */
+    S(e, -1, "songscale", "HarMin"); S(e, -1, "songroot", "E"); S(e, -1, "chordtrack", "5");
+    char gd[256]; e1_dump_global(e, gd, sizeof gd);
+    e1_engine_t *e2 = eng_new(); e1_init(e2); e1_load_global(e2, gd);
+    CHECK(e2->song_scale == 12 && e2->song_root == 4 && e2->chord_track == 5);
+    e1_load_global(e2, "dest=Move\nseed=3\nunknown=1\n");     /* old global dump: nothing moves */
+    CHECK(e2->song_scale == 12 && e2->chord_track == 5);
+    free(e2);
+
+    /* Follow. Track 10 is the chord track: C minor triad, one hit a bar. */
+#define CHORDSET() do { setup(e); for (int _t = 0; _t < 3; _t++) fresh(e, _t); fresh(e, 9); \
+        S(e, 9, "pool", "60,63,67"); S(e, 9, "pulses", "1"); S(e, 9, "scale", "Song"); S(e, 9, "root", "Song"); \
+        S(e, -1, "songscale", "Minor"); S(e, -1, "songroot", "C"); \
+        S(e, 0, "pool", "36"); S(e, 1, "pool", "48"); S(e, 2, "pool", "72"); S(e, 2, "style", "MonoFix"); \
+        for (int _t = 0; _t < 3; _t++) { S(e, _t, "scale", "Song"); S(e, _t, "root", "Song"); } } while (0)
+    CHORDSET();
+    S(e, 0, "follow", "Bass"); S(e, 1, "follow", "Chord"); S(e, 2, "follow", "Arp");
+    /* chord track off: everyone plays its own pool */
+    n = play_groups(e, c, 0, 1, g, 64); CHECK(n == 4 && !strcmp(notes_str(&g[0]), "36"));
+    n = play_groups(e, c, 2, 1, g, 64); CHECK(n == 4 && g[1].note[0] == 72);
+    CHECK(e1_followers(e) == 0);
+    S(e, -1, "chordtrack", "10");
+    CHECK(e1_followers(e) == 7u);
+    n = play_groups(e, c, 0, 1, g, 64); CHECKM(n == 4 && !strcmp(notes_str(&g[0]), "36"), "bass %s", notes_str(&g[0]));
+    n = play_groups(e, c, 1, 1, g, 64); CHECKM(n == 4 && !strcmp(notes_str(&g[0]), "48,51,55"), "chord %s", notes_str(&g[0]));
+    n = play_groups(e, c, 2, 1, g, 64);
+    CHECKM(n == 4 && g[0].n == 1 && g[0].note[0] == 72 && g[1].note[0] == 75 && g[2].note[0] == 79 && g[3].note[0] == 72,
+           "arp %d %d %d %d", g[0].note[0], g[1].note[0], g[2].note[0], g[3].note[0]);
+    /* the chord moves with the chord track's Pitch and Harmony */
+    S(e, 9, "pitch", "1");                                    /* D F G# in C minor: 62,65,68 */
+    n = play_groups(e, c, 0, 1, g, 64); CHECKM(n == 4 && !strcmp(notes_str(&g[0]), "38"), "bass %s", notes_str(&g[0]));
+    n = play_groups(e, c, 1, 1, g, 64); CHECKM(n == 4 && !strcmp(notes_str(&g[0]), "50,53,56"), "chord %s", notes_str(&g[0]));
+    S(e, 9, "pitch", "0"); S(e, 9, "harmony", "1");          /* the lowest note climbs a degree: 62,63,67 */
+    int ch[E1_POOL]; int cn = e1_chord(e, ch);
+    CHECK(cn == 3 && ch[0] == 62 && ch[1] == 63 && ch[2] == 67);
+    /* a cycle's own offset shapes the chord in that cycle */
+    S(e, 9, "harmony", "0"); e->t[9].cyc[0][E1_P_PITCH] = 2;
+    cn = e1_chord(e, ch); CHECK(cn == 3 && ch[0] == 63 && ch[1] == 67 && ch[2] == 70);
+    e->t[9].cyc[0][E1_P_PITCH] = 0;
+    /* the chord follows the song scale */
+    S(e, -1, "songscale", "Major"); S(e, 9, "pitch", "1");   /* 60,63,67 snap to 60,62,67 in C major, +1: 62,64,69 */
+    cn = e1_chord(e, ch); CHECKM(cn == 3 && ch[0] == 62 && ch[1] == 64 && ch[2] == 69, "%d %d %d", ch[0], ch[1], ch[2]);
+    /* an empty or CC chord track leaves followers alone */
+    CHORDSET(); S(e, 0, "follow", "Bass"); S(e, -1, "chordtrack", "10"); S(e, 9, "type", "CC");
+    n = play_groups(e, c, 0, 1, g, 64); CHECK(n == 4 && !strcmp(notes_str(&g[0]), "36") && e1_followers(e) == 0);
+    /* the chord track itself never follows */
+    CHORDSET(); S(e, 9, "follow", "Bass"); S(e, -1, "chordtrack", "10");
+    play_groups(e, c, 9, 1, g, 64); CHECK(!strcmp(notes_str(&g[0]), "60,63,67"));
+    CHECK(balanced(c));
+#undef CHORDSET
+
+    /* Split: every second hit goes out on the partner's channel. */
+    setup(e); fresh(e, 0); fresh(e, 1); S(e, 1, "mute", "On"); S(e, 0, "pool", "60"); S(e, 0, "split", "2");
+    cap_clear(c); e1_start(e, 0); run(e, c, 0, E1_TICKS_PER_BAR - 1, 1); e1_stop(e, emit, c);
+    CHECKM(count_ons(c, 0, 0, 1e9) == 2 && count_ons(c, 1, 0, 1e9) == 2, "split %d %d", count_ons(c, 0, 0, 1e9), count_ons(c, 1, 0, 1e9));
+    non_t on[8]; ons(c, -1, on, 8);
+    CHECK(on[0].ch == 0 && on[1].ch == 1 && on[2].ch == 0 && on[3].ch == 1 && balanced(c));
+    S(e, 0, "split", "1");                                    /* to itself: off */
+    cap_clear(c); e1_start(e, 0); run(e, c, 0, E1_TICKS_PER_BAR - 1, 1); e1_stop(e, emit, c);
+    CHECK(count_ons(c, 0, 0, 1e9) == 4 && count_ons(c, 1, 0, 1e9) == 0);
+    CHECK(e1_get(e, 0, "split", b, sizeof b) > 0 && !strcmp(b, "1"));
+    char td[16384]; S(e, 0, "split", "2"); S(e, 0, "follow", "Arp"); e1_dump_track(e, 0, td, sizeof td);
+    CHECK(strstr(td, "split=2\n") && strstr(td, "follow=Arp\n"));
+    free(e); free(c);
+}
+
 int main(int argc, char **argv)
 {
     if (argc == 3 && !strcmp(argv[1], "--probe")) return probe(argv[2]);
@@ -1657,6 +1761,7 @@ int main(int argc, char **argv)
     test_fuzz();
     test_v04();
     test_dice();
+    test_harmony();
 
     /* BUG: parse_value computes cur + atoi(val + 1) in int: signed overflow. */
     run_probe("dplus", "\"d+2147483647\" overflows int in parse_value");

@@ -61,6 +61,12 @@ button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
   </section>
 
   <section>
+    <h2>Song</h2>
+    <p class="hint">Tracks whose Scale or Root says Song play in this key. Tracks with Follow on take their notes from the chord track.</p>
+    <div class="pats" id="song"></div>
+  </section>
+
+  <section>
     <h2>Tracks</h2>
     <p class="hint">CC tracks show their 16 CC numbers below the track. Lanes 1 to 8 are knobs on page CC A, lanes 9 to 16 on CC B.</p>
     <div class="grid" id="tracks">
@@ -104,6 +110,19 @@ for (let i = 1; i <= 16; i++) {
   bind(inp, "p" + i + "_name", (v) => send("pname", i + " " + v.trim()));
   fields["p" + i + "_used"] = (v) => { inp.disabled = v !== "1"; inp.placeholder = v === "1" ? "" : "empty"; };
 }
+
+/* Song root, scale and chord track */
+const SCALES = ["Chrom", "Major", "Minor", "Penta", "Hira", "Iwato", "Tetra", "Dorian",
+  "Phryg", "Lydian", "Mixo", "Locri", "HarMin", "MelMin", "Blues", "MinPen", "Whole"];
+const ROOTS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+const song = document.getElementById("song");
+[["song_root", "songroot", "ROOT", ROOTS], ["song_scale", "songscale", "SCALE", SCALES],
+ ["chord_track", "chordtrack", "CHORD", ["Off"].concat(Array.from({ length: 16 }, (_, i) => "Track " + (i + 1)))]].forEach(([key, param, label, opts]) => {
+  const sel = el("select", { "aria-label": label }, opts.map((n, i) => el("option", { value: String(i), text: n })));
+  song.appendChild(el("label", {}, [el("span", { text: label }), sel]));
+  sel.addEventListener("change", () => send(param, param === "chordtrack" ? sel.value : opts[parseInt(sel.value, 10)]));
+  fields[key] = (v) => { if (document.activeElement !== sel) sel.value = String(parseInt(v, 10) || 0); };
+});
 
 /* Tracks */
 const tracks = document.getElementById("tracks");

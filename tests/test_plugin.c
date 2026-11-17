@@ -579,6 +579,19 @@ static void test_dump_load(void)
     /* load:g takes only the global keys */
     set(inst, "load:g", "focus=5\nt1:steps=3\npanic=1\n");
     CHECK(S->focus == 0 && strcmp(get(inst, "t1:steps"), "16") == 0);
+    /* song settings: saved with the globals, reachable from the web page, and
+     * a set saved before they existed comes back as C minor, no chord track */
+    set(inst, "songroot", "E"); set(inst, "songscale", "Lydian"); set(inst, "w:chordtrack", "10");
+    n = api->get_param(inst, "dump:g", b, sizeof b);
+    CHECK(n > 0 && strstr(b, "songroot=E\n") && strstr(b, "songscale=Lydian\n") && strstr(b, "chordtrack=10\n"));
+    memcpy(g, b, sizeof g);
+    set(inst, "load:g", "");
+    CHECK(S->e.song_root == 0 && S->e.song_scale == 2 && S->e.chord_track == 0);
+    set(inst, "load:g", g);
+    CHECK(S->e.song_root == 4 && S->e.song_scale == 9 && S->e.chord_track == 10);
+    n = api->get_param(inst, "ui", b, sizeof b);
+    CHECK(n > 0 && strstr(b, "\"sr\":4,\"ss\":9,\"ct\":10,"));
+    CHECK(strstr(get(inst, "state"), "\"song_root\":\"4\"") != NULL);
     api->destroy_instance(inst);
 }
 
