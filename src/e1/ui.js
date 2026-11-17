@@ -31,7 +31,7 @@ import {
 import {
     PERFORM, CLOCKS, DESTS, COL, BTN, STEP_BASE, GLOBAL_KEYS,
     valuesFrom, metaFor, ledFrame, pageOptions, drawLayer, LAYER_COL, currentPages, pageIndex, knobKeys,
-    padModel, padMode, padPages, padToTrack, padToSlot, trackName, AUTOS, SONG, songLabel,
+    padModel, padMode, padPages, padToTrack, padToSlot, trackName, AUTOS, SONG, songLabel, SOURCES,
     knobLeds, drawSelection, drawValueList, selectedKnob, drawCycleStrip,
 } from "./e1_view.mjs";
 import { createLibrary, createMenu, starterSet } from "./e1_library.mjs";
@@ -419,6 +419,19 @@ function stepAuto(d) {
     setAuto(AUTOS[Math.max(0, Math.min(AUTOS.length - 1, cur + d))]);
 }
 
+/* Source: Random + Left/Right steps through the shapes. */
+function stepSource(d) {
+    const cur = Math.max(0, SOURCES.indexOf(st.values.source));
+    const next = SOURCES[Math.max(0, Math.min(SOURCES.length - 1, cur + d))];
+    setTrack("source", next);
+    toast("SOURCE", next + " " + who());
+}
+function toggleFit() {
+    const on = st.values.fit !== "On";
+    setTrack("fit", on ? "On" : "Off");
+    toast("FIT", (on ? "ON " : "OFF ") + who());
+}
+
 function stopRepeats() {
     const m = aimMask();
     if (!st.snap || !((st.snap.rp | 0) & m)) return;
@@ -749,6 +762,7 @@ function onSlot(i, on, vel) {
         break;
     case "randstart": randomStart(!st.shift); break;
     case "reroll": reroll(); break;
+    case "fit": toggleFit(); break;
     case "oct":
         st.kbOct = Math.max(-2, Math.min(8, st.kbOct + act.d));
         dirty = true;
@@ -967,6 +981,7 @@ function onCC(cc, v) {
         break;
     case CC.left: case CC.right: {
         const d = cc === CC.right ? 1 : -1;
+        if (st.randomHeld) { stepSource(d); break; }
         if (st.shift) { setTrack("rotate", rel(d)); toast("ROTATE", (d > 0 ? "+1 " : "-1 ") + who()); }
         else {
             const steps = (st.snap && st.snap.sn) || 16;

@@ -29,6 +29,10 @@ export const GROOVES = ["Agogo", "Congas", "Timbal", "Bongo", "Saw", "Tri", "Sin
 export const REPEATS_INF = 49;
 export const LOOPS = ["Free", "1", "2", "4", "8"];   /* Loop lock: bars after which chance and random come round */
 export const AUTOS = ["Off", "1", "2", "4", "8"];    /* Auto roll: bars between new dice */
+export const DIRS = ["Forward", "Backward", "Pendulum", "Random"];
+/* Source: how the random amounts move. Short names for the footer. */
+export const SOURCES = ["Random", "Drift", "RampUp", "RampDn", "Tri", "Square"];
+export const SOURCE_SHORT = ["RND", "DRF", "UP", "DN", "TRI", "SQR"];
 /* Dice pads, in the order of the engine's layers (bit i of snap.dc / snap.dm). */
 export const DICE = [
     { layer: "notes", label: "NOTES", short: "NOTE" },
@@ -84,7 +88,7 @@ export const TRACK_PARAMS = [
     { key: "channel", name: "Chan", type: "int", min: 1, max: 16, div: 4 },
     { key: "output", name: "Output", type: "enum", options: ["Global", "Move", "Computer", "Both"], div: 8 },
     { key: "mute", name: "Mute", type: "enum", options: ["Off", "On"], div: 8 },
-    { key: "dir", name: "Dir", type: "enum", options: ["Up", "Down"], div: 8 },
+    { key: "dir", name: "Dir", type: "enum", options: DIRS, div: 6 },
     { key: "tail", name: "Repeat", type: "enum", options: ["Choke", "Tail"], div: 8 },
     { key: "phraserate", name: "PhrRate", type: "enum", options: ["x1", "x2", "/2"], div: 8 },
     { key: "ccmode", name: "Send", type: "enum", options: ["Pulse", "Change", "Glide"], div: 8 },
@@ -96,6 +100,10 @@ export const TRACK_PARAMS = [
     { key: "dicelen", name: "DiceLen", type: "enum", options: ["Off", "On"], div: 8 },
     { key: "follow", name: "Follow", type: "enum", options: FOLLOWS, div: 8 },
     { key: "split", name: "Split", type: "enum", options: TRACK_CHOICES, div: 4 },
+    { key: "source", name: "Source", type: "enum", options: SOURCES, div: 6 },
+    { key: "fit", name: "Fit", type: "enum", options: ["Off", "On"], div: 8 },
+    { key: "warp", name: "Warp", type: "int", min: -100, max: 100, div: 1 },
+    { key: "jitter", name: "Jitter", type: "int", min: 0, max: 100, div: 1 },
 ];
 
 export const GLOBAL_PARAMS = [
@@ -151,7 +159,7 @@ export const SETTINGS_PAGES = [
         alt: [null, null, null, null, null, null, null, null] },
     { name: "Track",
         keys: ["type", "tail", "phraserate", "follow", "split", "mute", "dir", "dicelen"],
-        alt: ["random", "rate", "swinggrid", "loop", "autoroll", null, null, null] },
+        alt: ["random", "rate", "swinggrid", "loop", "autoroll", "source", "warp", "jitter"] },
 ];
 export const SETTINGS_PAGE = SETTINGS_PAGES[0];
 
@@ -205,8 +213,11 @@ export function randomKey(key) {
     return m && m.rnd ? "r." + key : null;
 }
 
-export function paramDefs(snap) {
-    const out = TRACK_PARAMS.concat(GLOBAL_PARAMS);
+export function paramDefs(snap, values) {
+    let out = TRACK_PARAMS.concat(GLOBAL_PARAMS);
+    /* With Fit on, the Div square reads FIT whatever the division. */
+    if (values && values.fit === "On")
+        out = out.map((p) => (p.key === "division" ? Object.assign({}, p, { short_options: DIVISIONS.map(() => "FIT") }) : p));
     for (const p of TRACK_PARAMS) if (p.rnd) out.push({ key: "r." + p.key, name: p.name, type: "int", min: -100, max: 100 });
     for (let i = 0; i < 16; i++) {
         const num = snap && snap.cn ? snap.cn[i] : 70 + i;
@@ -243,7 +254,7 @@ export function valuesFrom(snap, pkeys) {
     return v;
 }
 
-const SIGNED = new Set(["prob", "ramp", "pace", "delay", "pitch", "harmony", "voicing", "range", "accent", "timing"]);
+const SIGNED = new Set(["prob", "ramp", "pace", "delay", "pitch", "harmony", "voicing", "range", "accent", "timing", "warp"]);
 
 /* What Scale or Root comes to: the track's own, or the song's while it says Song. */
 export function resolved(v, key) {
@@ -258,6 +269,7 @@ export function displayFor(key, raw, v) {
     const n = parseInt(raw, 10);
     if ((key === "scale" || key === "root") && raw === SONG) return "S:" + String((v || {})["song" + key] || "").toUpperCase();
     if (isLane(key) && n < 0) return "OFF";
+    if (key === "division" && (v || {}).fit === "On") return "FIT";   /* Fit spreads the steps; Division waits */
     if (key === "repeats" && n >= REPEATS_INF) return "INF";
     if ((SIGNED.has(key) || isRnd(key)) && n > 0) return "+" + raw;
     return null;
@@ -340,7 +352,9 @@ const DIV_SLOTS = { 0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 10: 7, 11: 8, 12: 
 const COARSE = [-1, -0.5, -0.25, 0, 0.25, 0.5, 1];
 const NUDGE = [-5, -2, -1, null, 1, 2, 5];
 
-const ENUM_COL = { length: COL.green, quant: COL.green, scale: COL.blue, loop: COL.green, autoroll: COL.green, follow: COL.green };
+const ENUM_COL = { length: COL.green, quant: COL.green, scale: COL.blue, loop: COL.green, autoroll: COL.green, follow: COL.green, dir: COL.pink, fit: COL.pink };
+/* Source pads: one colour per shape so they read at a glance. */
+export const SOURCE_COL = [COL.purple, COL.cyan, COL.green, COL.yellow, COL.orange, COL.brightBlue];
 /* Track pads: the chord track is blue, tracks that follow it are green. */
 const SCALE_PADS = 15;                               /* scales per pad page; pad 16 is Song */
 /* Dice pads: bright while the lane plays, dim while it does not. */
@@ -481,14 +495,23 @@ export function padModel(st) {
             pads[slot] = { c, act: set(key, DIVISIONS[idx], m.name + " " + DIVISIONS[idx]) };
         }
         if (key === "rate") pads[15] = { c: COL.pink, act: { k: "reroll" } };
-        return { title, pads };
+        /* Division: the pink pad at the end turns Fit on and off. */
+        if (key === "division") pads[15] = { c: v.fit === "On" ? COL.pink : COL.dimPink, act: { k: "fit" } };
+        return { title: key === "division" && v.fit === "On" ? "DIV (FIT ON)" : title, pads };
     }
 
     if (key === "style") {
         [0, 1, 2, 8, 9, 10, 4].forEach((slot, i) => {
             pads[slot] = { c: STYLES[i] === cur ? COL.white : (i === 6 ? COL.purple : COL.darkGreen), act: set("style", STYLES[i], STYLES[i]) };
         });
-        dirPads(pads, v);
+        return { title, pads };
+    }
+    if (key === "source") {
+        /* One colour per shape, the chosen one white; pink re-rolls (Drift too). */
+        SOURCES.forEach((o, i) => {
+            pads[i] = { c: o === cur ? COL.white : SOURCE_COL[i], act: set("source", o, "SOURCE " + o) };
+        });
+        pads[15] = { c: COL.pink, act: { k: "reroll" } };
         return { title, pads };
     }
     if (key === "phrase" || key === "groove") {
@@ -534,7 +557,6 @@ export function padModel(st) {
             if (d === null) pads[i] = { c: COL.grey, act: set(key, 0, m.name + " 0") };
             else pads[i] = { c: COL.dimOrange, act: { k: "nudge", key, d } };
         });
-        if (key === "voicing") dirPads(pads, v);
         if (key === "range") ratePads(pads, v);
         if (key === "timing") {
             pads[7] = { c: v.swinggrid === "x2" ? COL.pink : COL.dimPink, act: set("swinggrid", v.swinggrid === "x2" ? "x1" : "x2", "GRID " + (v.swinggrid === "x2" ? "X1" : "X2")) };
@@ -565,10 +587,6 @@ export function padModel(st) {
     return { title, pads };
 }
 
-function dirPads(pads, v) {
-    pads[7] = { c: v.dir === "Up" ? COL.pink : COL.dimPink, act: set("dir", "Up", "DIRECTION UP") };
-    pads[15] = { c: v.dir === "Down" ? COL.pink : COL.dimPink, act: set("dir", "Down", "DIRECTION DOWN") };
-}
 function ratePads(pads, v) {
     pads[7] = { c: v.phraserate === "x2" ? COL.pink : COL.dimPink, act: set("phraserate", v.phraserate === "x2" ? "x1" : "x2", "PHRASE " + (v.phraserate === "x2" ? "X1" : "X2")) };
     pads[15] = { c: v.phraserate === "/2" ? COL.pink : COL.dimPink, act: set("phraserate", v.phraserate === "/2" ? "x1" : "/2", "PHRASE " + (v.phraserate === "/2" ? "X1" : "/2")) };
@@ -664,10 +682,14 @@ export function currentPage(st) {
 
 /* The eight keys under the knobs right now: Shift shows the second layer,
  * holding Random shows the random amounts of whichever layer is up. */
+/* Knobs that take no random amount carry the time moves while Random is
+ * held: Cycles = Jitter, Division = Warp, Shift + Cycles' slot = Source,
+ * Shift + Division's slot = Fit. */
+export const RANDOM_EXTRA = { cycles: "jitter", division: "warp", dicetype: "source", density: "fit" };
 export function knobKeys(st) {
     const pg = currentPage(st);
     let keys = st.shift ? pg.alt : pg.keys;
-    if (st.randomHeld) keys = keys.map((k) => (k ? randomKey(k) : null));
+    if (st.randomHeld) keys = keys.map((k) => (k ? randomKey(k) || (st.settings ? null : RANDOM_EXTRA[k] || null) : null));
     return keys;
 }
 
@@ -687,7 +709,11 @@ export function footerFor(st) {
     if (st.fzOn) return [["FREEZE", (st.fzLen | 0) + " ST " + ((st.fzMask & 0xFFFF) === 0xFFFF ? "ALL" : "PART")]];
     if (st.randomHeld && !st.settings) {
         const l = (st.values || {}).loop || "Free", a = (st.values || {}).autoroll || "Off";
-        return [["LOOP", l === "Free" ? "FREE" : l + "B"], ["AUTO", a === "Off" ? "OFF" : a + "B"]];
+        const src = SOURCE_SHORT[Math.max(0, SOURCES.indexOf((st.values || {}).source))];
+        /* Auto roll only when it is on, so all three fit. */
+        const out3 = [["SRC", src], ["LOOP", l === "Free" ? "FREE" : l + "B"]];
+        if (a !== "Off") out3.push(["AUTO", a + "B"]);
+        return out3;
     }
     if (s.tmp) out.push(["TEMP", ""]);
     if (s.sm && s.sm !== "0") {
@@ -740,7 +766,7 @@ export function pageOptions(st, lib) {
     else if (st.shift) label = pg.name + " 2";
     return {
         page: { kind: lib.PAGE_KNOBS, name: label, level: "root", keys },
-        metaIndex: lib.buildMetaIndex({ chainParams: paramDefs(s) }),
+        metaIndex: lib.buildMetaIndex({ chainParams: paramDefs(s, st.values) }),
         values: st.values,
         title,
         pageLabel: label,

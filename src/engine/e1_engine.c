@@ -38,7 +38,8 @@ static const char *const ROOT_NAMES[]   = { "Song", "C", "C#", "D", "D#", "E", "
 static const char *const FOLLOW_NAMES[] = { "Off", "Bass", "Chord", "Arp" };
 static const char *const GROOVE_NAMES[] = { "Agogo", "Congas", "Timbal", "Bongo", "Saw", "Tri", "Sine", "Pulse", "Dice" };
 static const char *const GRID_NAMES[]   = { "x1", "x2", "x4" };
-static const char *const DIR_NAMES[]    = { "Up", "Down" };
+static const char *const DIR_NAMES[]    = { "Forward", "Backward", "Pendulum", "Random" };
+static const char *const SOURCE_NAMES[] = { "Random", "Drift", "RampUp", "RampDn", "Tri", "Square" };
 static const char *const TAIL_NAMES[]   = { "Choke", "Tail" };
 static const char *const PRATE_NAMES[]  = { "x1", "x2", "/2" };
 static const char *const LOOP_NAMES[]   = { "Free", "1", "2", "4", "8" };
@@ -128,7 +129,7 @@ static const pdesc_t P[E1_NP] = {
     [E1_P_CHANNEL]    = { "channel",    1, 16, 1,    NULL,         0, 0 },
     [E1_P_OUTPUT]     = { "output",     0, 3, 0,     OUT_NAMES,    0, 0 },
     [E1_P_MUTE]       = { "mute",       0, 1, 0,     ONOFF_NAMES,  0, 0 },
-    [E1_P_DIR]        = { "dir",        0, 1, 0,     DIR_NAMES,    F_CYC, 0 },
+    [E1_P_DIR]        = { "dir",        0, 3, 0,     DIR_NAMES,    F_CYC, 0 },
     [E1_P_TAIL]       = { "tail",       0, 1, 0,     TAIL_NAMES,   0, 0 },
     [E1_P_PHRASERATE] = { "phraserate", 0, 2, 0,     PRATE_NAMES,  0, 0 },
     [E1_P_CCMODE]     = { "ccmode",     0, 2, 0,     CCMODE_NAMES, 0, 0 },
@@ -140,6 +141,10 @@ static const pdesc_t P[E1_NP] = {
     [E1_P_DICELEN]    = { "dicelen",    0, 1, 0,     ONOFF_NAMES,  0, 0 },
     [E1_P_FOLLOW]     = { "follow",     0, 3, 0,     FOLLOW_NAMES, 0, 0 },
     [E1_P_SPLIT]      = { "split",      0, E1_TRACKS, 0, NULL,     0, 0 },
+    [E1_P_SOURCE]     = { "source",     0, E1_SOURCES - 1, 0, SOURCE_NAMES, 0, 0 },
+    [E1_P_FIT]        = { "fit",        0, 1, 0,     ONOFF_NAMES,  0, 0 },
+    [E1_P_WARP]       = { "warp",       -100, 100, 0, NULL,        F_CYC, 0 },
+    [E1_P_JITTER]     = { "jitter",     0, 100, 0,   NULL,         0, 0 },
 };
 
 int e1_param_count(void) { return E1_NP; }
@@ -207,6 +212,51 @@ uint64_t e1_steps_edited(const e1_track_t *t)
     return m;
 }
 
+/* ---------------------------------------------------------- shapes */
+
+static int64_t shape_period(const e1_engine_t *e, int ti);
+
+/* 0..1 for Source `src` at `pos` in a period of P. Drift is a smooth walk
+ * through four random points per period; looped, the fourth leads back to
+ * the first so the walk comes round. */
+static double shape_u(uint32_t seed, int salt, int src, double pos, double P, int wrap)
+{
+    if (P <= 0) P = 1;
+    double ph = fmod(pos, P) / P;
+    if (ph < 0) ph += 1.0;
+    switch (src) {
+    case E1_SRC_DRIFT: {
+        double x = pos / P * 4.0;
+        int64_t i = (int64_t)floor(x);
+        double f = x - (double)i;
+        int64_t i0 = wrap ? ((i % 4) + 4) % 4 : i, i1 = wrap ? (i0 + 1) % 4 : i + 1;
+        double a = (double)(mix(((uint64_t)seed << 32) ^ ((uint64_t)salt << 20) ^ 0xD71F7000ULL ^ (uint64_t)i0) % 1001ULL) / 1000.0;
+        double b = (double)(mix(((uint64_t)seed << 32) ^ ((uint64_t)salt << 20) ^ 0xD71F7000ULL ^ (uint64_t)i1) % 1001ULL) / 1000.0;
+        f = f * f * (3.0 - 2.0 * f);
+        return a + (b - a) * f;
+    }
+    case E1_SRC_RAMPUP: return ph;
+    case E1_SRC_RAMPDN: return 1.0 - ph;
+    case E1_SRC_TRI:    return 1.0 - fabs(2.0 * ph - 1.0);
+    case E1_SRC_SQUARE: return ph < 0.5 ? 1.0 : 0.0;
+    default: return 0.0;
+    }
+}
+
+/* A shape's value for a random amount. Per-cycle parameters (`per_cycle`)
+ * follow it across the cycles, idx being the cycle; the rest at Rate, idx
+ * being the random step, over the shape period. */
+static double shape_at(const e1_engine_t *e, int ti, int salt, int idx, int per_cycle)
+{
+    const e1_track_t *t = &e->t[ti];
+    if (per_cycle) {
+        int nc = clampi(t->v[E1_P_CYCLES], 1, E1_CYCLES);
+        return shape_u(tseed(e, t), salt, t->v[E1_P_SOURCE], (double)idx, (double)nc, 1);
+    }
+    double pos = (double)idx * (double)e1_division_ticks[clampi(t->v[E1_P_RATE], 0, E1_DIVISIONS - 1)];
+    return shape_u(tseed(e, t), salt, t->v[E1_P_SOURCE], pos, (double)shape_period(e, ti), t->v[E1_P_LOOP] > 0);
+}
+
 /* As eff(), plus the step's own offset when the step carries one. */
 static int eff_s(const e1_engine_t *e, int ti, int p, int c, int ridx, int step);
 
@@ -219,7 +269,11 @@ static int eff_s(const e1_engine_t *e, int ti, int p, int c, int ridx, int step)
     int v = t->v[p];
     if ((d->flags & F_CYC) && c >= 0 && c < E1_CYCLES) v += t->cyc[c][p];
     if ((d->flags & F_STEP) && step >= 0) { int r = sed_find(t, step); if (r >= 0) v += t->sed[r][p]; }
-    if (t->rnd[p] && t->v[E1_P_RANDOM] > 0) {
+    if (t->rnd[p] && t->v[E1_P_RANDOM] > 0 && t->v[E1_P_SOURCE] != E1_SRC_RANDOM) {
+        int idx = (d->flags & F_RC) ? c : ((d->flags & F_RR) ? ridx : -1);
+        if (idx >= 0)
+            v += (int)lrint((double)t->rnd[p] / 100.0 * (double)d->span * shape_at(e, ti, ti * 64 + p, idx, (d->flags & F_RC) != 0));
+    } else if (t->rnd[p] && t->v[E1_P_RANDOM] > 0) {
         int idx = (d->flags & F_RC) ? c : ((d->flags & F_RR) ? ridx : -1);
         if (idx >= 0) {
             uint64_t h = mix(((uint64_t)tseed(e, t) << 32) ^ ((uint64_t)(ti * 64 + p) << 16) ^ (uint64_t)idx);
@@ -602,11 +656,85 @@ static double engine_time(const e1_engine_t *e, const e1_track_t *t, double T)
 
 typedef struct {
     int c;            /* cycle */
-    int step;         /* step in the cycle */
+    int step;         /* slot in the cycle, in time order (Dir and Jitter pick the step it plays) */
     int steps;
     int dur;          /* ticks until the next slot */
     int64_t start;    /* track time */
+    int64_t cstart;   /* track time where this pass through the cycle began */
+    int64_t D;        /* the cycle's length in ticks */
+    int64_t g;        /* slots since the round (or the Length) began */
+    int warp;
 } slot_t;
+
+/* Fit: each cycle lasts the Length (one bar while Length is Off), its steps
+ * spread evenly over it. Length then no longer cuts the round short. */
+static int64_t fit_ticks(const e1_track_t *t)
+{
+    int bars = e1_length_bars[clampi(t->v[E1_P_LENGTH], 0, E1_LENGTHS - 1)];
+    return (int64_t)(bars ? bars : 1) * E1_TICKS_PER_BAR;
+}
+
+static int64_t cycle_ticks(const e1_engine_t *e, int ti, int c, int steps)
+{
+    const e1_track_t *t = &e->t[ti];
+    if (t->v[E1_P_FIT]) return fit_ticks(t) < steps ? steps : fit_ticks(t);
+    return (int64_t)steps * div_ticks(eff(e, ti, E1_P_DIVISION, c, -1));
+}
+
+/* Warp bends where the steps fall: x -> x^p with p = 3^(-warp/100), so
+ * positive warp starts slow and rushes, negative starts fast and slows.
+ * The cycle's ends stay put. One tick per step is kept out of the bend so
+ * every step lasts at least one tick. */
+static double warp_pow(int warp) { return pow(3.0, -(double)warp / 100.0); }
+
+static int64_t step_edge(int64_t D, int n, int warp, int k)
+{
+    if (k <= 0) return 0;
+    if (k >= n) return D;
+    double x = (double)k / (double)n;
+    if (warp) x = pow(x, warp_pow(warp));
+    return (int64_t)floor(x * (double)(D - n) + 0.5) + k;
+}
+
+/* The slot index whose span holds r (0 <= r < D). */
+static int step_find(int64_t D, int n, int warp, int64_t r)
+{
+    double y = (double)r / (double)D;
+    if (warp) y = pow(y, 1.0 / warp_pow(warp));
+    int k = clampi((int)(y * (double)n), 0, n - 1);
+    while (k > 0 && step_edge(D, n, warp, k) > r) k--;
+    while (k < n - 1 && step_edge(D, n, warp, k + 1) <= r) k++;
+    return k;
+}
+
+static int cycle_list(const e1_track_t *t, int *list)
+{
+    int n = 0;
+    if (t->edit_mask) { for (int c = 0; c < E1_CYCLES; c++) if (t->edit_mask & (1u << c)) list[n++] = c; }
+    else { int nc = clampi(t->v[E1_P_CYCLES], 1, E1_CYCLES); for (int c = 0; c < nc; c++) list[n++] = c; }
+    return n;
+}
+
+/* Length in ticks as it cuts the round: 0 = no cut. */
+static int64_t length_cut(const e1_track_t *t)
+{
+    if (t->v[E1_P_FIT]) return 0;
+    return (int64_t)e1_length_bars[clampi(t->v[E1_P_LENGTH], 0, E1_LENGTHS - 1)] * E1_TICKS_PER_BAR;
+}
+
+/* The period shapes run over, in ticks. See E1_SRC_*. */
+static int64_t shape_period(const e1_engine_t *e, int ti)
+{
+    const e1_track_t *t = &e->t[ti];
+    int bars = e1_loop_bars[clampi(t->v[E1_P_LOOP], 0, E1_LOOPS - 1)];
+    if (bars) return (int64_t)bars * E1_TICKS_PER_BAR;
+    int list[E1_CYCLES], n = cycle_list(t, list);
+    int64_t round = 0;
+    for (int i = 0; i < n; i++) round += cycle_ticks(e, ti, list[i], eff(e, ti, E1_P_STEPS, list[i], -1));
+    int64_t Lt = length_cut(t);
+    if (Lt > 0 && Lt < round) round = Lt;
+    return round > 0 ? round : E1_TICKS_PER_BAR;
+}
 
 /* The slot that contains track time T. One round is every active cycle
  * played once; Length cuts the round short and starts again. */
@@ -614,33 +742,32 @@ static void slot_at(const e1_engine_t *e, int ti, int64_t T, slot_t *s)
 {
     const e1_track_t *t = &e->t[ti];
     if (T < 0) T = 0;
-    int64_t Lt = (int64_t)e1_length_bars[clampi(t->v[E1_P_LENGTH], 0, E1_LENGTHS - 1)] * E1_TICKS_PER_BAR;
+    int64_t Lt = length_cut(t);
     int64_t base = 0, Tm = T;
     if (Lt > 0) { base = (T / Lt) * Lt; Tm = T - base; }
 
-    int list[E1_CYCLES], n = 0;
-    if (t->edit_mask) { for (int c = 0; c < E1_CYCLES; c++) if (t->edit_mask & (1u << c)) list[n++] = c; }
-    else { int nc = clampi(t->v[E1_P_CYCLES], 1, E1_CYCLES); for (int c = 0; c < nc; c++) list[n++] = c; }
-
-    int st[E1_CYCLES], dt[E1_CYCLES];
-    int64_t round = 0;
+    int list[E1_CYCLES], n = cycle_list(t, list);
+    int st[E1_CYCLES], wp[E1_CYCLES];
+    int64_t Dc[E1_CYCLES], round = 0, nslots = 0;
     for (int i = 0; i < n; i++) {
         st[i] = eff(e, ti, E1_P_STEPS, list[i], -1);
-        dt[i] = div_ticks(eff(e, ti, E1_P_DIVISION, list[i], -1));
-        round += (int64_t)st[i] * dt[i];
+        Dc[i] = cycle_ticks(e, ti, list[i], st[i]);
+        wp[i] = eff(e, ti, E1_P_WARP, list[i], -1);
+        round += Dc[i];
+        nslots += st[i];
     }
-    int64_t r = Tm % round, acc = Tm - r;
-    s->c = list[0]; s->step = 0; s->steps = st[0]; s->dur = dt[0]; s->start = base + acc;
-    for (int i = 0; i < n; i++) {
-        int64_t D = (int64_t)st[i] * dt[i];
-        if (r < D) {
-            s->c = list[i]; s->steps = st[i]; s->dur = dt[i];
-            s->step = (int)(r / dt[i]);
-            s->start = base + acc + (int64_t)s->step * dt[i];
-            break;
-        }
-        r -= D; acc += D;
-    }
+    int64_t r = Tm % round, acc = Tm - r, g = (Tm / round) * nslots;
+    int i = 0;
+    while (i < n - 1 && r >= Dc[i]) { r -= Dc[i]; acc += Dc[i]; g += st[i]; i++; }
+    if (r >= Dc[i]) r = Dc[i] - 1;
+    int k = step_find(Dc[i], st[i], wp[i], r);
+    int64_t e0 = step_edge(Dc[i], st[i], wp[i], k), e1 = step_edge(Dc[i], st[i], wp[i], k + 1);
+    s->c = list[i]; s->steps = st[i]; s->step = k;
+    s->D = Dc[i]; s->warp = wp[i];
+    s->cstart = base + acc;
+    s->start = base + acc + e0;
+    s->dur = (int)(e1 - e0);
+    s->g = g + k;
     if (Lt > 0 && s->start + s->dur > base + Lt) s->dur = (int)(base + Lt - s->start);
     if (s->dur < 1) s->dur = 1;
 }
@@ -868,7 +995,7 @@ uint32_t e1_followers(const e1_engine_t *e)
 /* The notes one pulse plays. pidx counts pulses since the cycle began (and
  * goes on counting through repeats), which is what moves mono styles and
  * Climb along. Returns the note count, at most E1_POOL. */
-static int build_notes(const e1_engine_t *e, int ti, int c, int step, int pidx, int dpos, int shift, int ridx, int *out)
+static int build_notes(const e1_engine_t *e, int ti, int c, int step, int pidx, int dpos, int shift, int ridx, int down, int *out)
 {
     const e1_track_t *t = &e->t[ti];
     int src[E1_POOL], role;
@@ -877,7 +1004,6 @@ static int build_notes(const e1_engine_t *e, int ti, int c, int step, int pidx, 
     int scale = rscale(e, eff_s(e, ti, E1_P_SCALE, c, ridx, step)), root = rroot(e, eff_s(e, ti, E1_P_ROOT, c, ridx, step));
     int pitch = eff_s(e, ti, E1_P_PITCH, c, ridx, step), harm = eff_s(e, ti, E1_P_HARMONY, c, ridx, step);
     int voicing = eff_s(e, ti, E1_P_VOICING, c, ridx, step), style = eff_s(e, ti, E1_P_STYLE, c, ridx, step);
-    int down = eff(e, ti, E1_P_DIR, c, ridx);
     if (role == E1_FOLLOW_ARP && style < 3) style += 3;      /* an arp plays one chord tone at a time */
 
     int L[E1_POOL + 16], len = n;
@@ -999,7 +1125,9 @@ static int cc_eff(const e1_engine_t *e, int ti, int lane, int c, int ridx)
     int v = t->cc_val[lane];
     if (v < 0) return -1;
     if (c >= 0 && c < E1_CYCLES) v += t->cc_cyc[c][lane];
-    if (t->cc_rnd[lane] && t->v[E1_P_RANDOM] > 0 && ridx >= 0) {
+    if (t->cc_rnd[lane] && t->v[E1_P_RANDOM] > 0 && ridx >= 0 && t->v[E1_P_SOURCE] != E1_SRC_RANDOM) {
+        v += (int)lrint((double)t->cc_rnd[lane] / 100.0 * 127.0 * shape_at(e, ti, ti * 64 + 48 + lane, ridx, 0));
+    } else if (t->cc_rnd[lane] && t->v[E1_P_RANDOM] > 0 && ridx >= 0) {
         uint64_t h = mix(((uint64_t)tseed(e, t) << 32) ^ ((uint64_t)(ti * 64 + 48 + lane) << 16) ^ (uint64_t)ridx);
         if ((int)(h % 100ULL) < t->v[E1_P_RANDOM])
             v += (int)lrint((double)t->cc_rnd[lane] / 100.0 * 127.0 * ((double)((h >> 8) % 1001ULL) / 1000.0));
@@ -1021,24 +1149,82 @@ static int groove_tenths(const e1_track_t *t, int groove, int step)
 }
 
 /* The step a slot is played as, and whether it is a retrigger step. */
-static int play_step(const e1_track_t *t, const slot_t *s) { return t->p_reverse ? s->steps - 1 - s->step : s->step; }
 static int is_retrig(const e1_track_t *t, int step) { return step >= 0 && step < 64 && ((t->retrig >> step) & 1); }
+
+static int64_t loop_ticks(const e1_track_t *t)
+{
+    return (int64_t)e1_loop_bars[clampi(t->v[E1_P_LOOP], 0, E1_LOOPS - 1)] * E1_TICKS_PER_BAR;
+}
+/* Track time as Loop lock sees it: wrapped to the loop, so draws come round. */
+static int64_t loop_wrap(const e1_track_t *t, int64_t T)
+{
+    int64_t L = loop_ticks(t);
+    return L ? ((T % L) + L) % L : T;
+}
+
+/* Jitter: on each slot of this pass through the cycle, with Jitter's chance,
+ * the playhead skips a step ahead, plays the step again or steps back, and
+ * goes on from there. The walk starts fresh with each pass (and at each
+ * Loop start), and its draws follow Loop lock. Returns the offset. */
+static int jitter_offset(const e1_engine_t *e, int ti, const slot_t *s)
+{
+    const e1_track_t *t = &e->t[ti];
+    int J = t->v[E1_P_JITTER];
+    if (J <= 0) return 0;
+    int64_t L = loop_ticks(t), from = L ? (s->start / L) * L : 0;
+    uint32_t seed = tseed(e, t);
+    int o = 0;
+    for (int j = 1; j <= s->step; j++) {
+        int64_t at = s->cstart + step_edge(s->D, s->steps, s->warp, j);
+        if (at < from) continue;
+        uint64_t h = mix(((uint64_t)seed << 32) ^ ((uint64_t)(ti + 1) << 56) ^ 0x7177E000000ULL ^ (uint64_t)loop_wrap(t, at));
+        if ((int)(h % 100ULL) >= J) continue;
+        int kind = (int)((h >> 12) % 3ULL);
+        o += kind == 0 ? 1 : (kind == 1 ? -1 : -2);
+    }
+    return o;
+}
+
+/* The step a slot plays: Dir, then Jitter, then the Reverse move on top.
+ * *rev is set when the playhead is running backwards there. */
+static int play_step_x(const e1_engine_t *e, int ti, const slot_t *s, int jit, int *rev)
+{
+    const e1_track_t *t = &e->t[ti];
+    int n = s->steps, k = s->step, pos, back = 0;
+    int o = jit ? jitter_offset(e, ti, s) : 0;
+    int dir = eff(e, ti, E1_P_DIR, s->c, -1);
+    if (dir == E1_DIR_PEND && n > 1) {
+        int64_t m = 2 * (int64_t)n - 2, q = ((s->g + o) % m + m) % m;
+        pos = (int)(q < n ? q : m - q);
+        back = q >= n;
+    } else if (dir == E1_DIR_RAND && n > 1) {
+        uint64_t h = mix(((uint64_t)tseed(e, t) << 32) ^ ((uint64_t)(ti + 1) << 56) ^ 0xD12E000000ULL ^ (uint64_t)loop_wrap(t, s->start));
+        pos = (int)(h % (uint64_t)n);
+    } else {
+        pos = ((k + o) % n + n) % n;
+        if (dir == E1_DIR_BACK) { pos = n - 1 - pos; back = 1; }
+    }
+    if (t->p_reverse) { pos = n - 1 - pos; back = !back; }
+    if (rev) *rev = back;
+    return pos;
+}
 
 /* Time as the free-running parts count it: from the last retrigger step,
  * and wrapped to the loop when Loop is set, so the same draws come round. */
-static int64_t free_time(const e1_track_t *t, const slot_t *s)
+static int64_t free_time(const e1_engine_t *e, int ti, const slot_t *s)
 {
+    const e1_track_t *t = &e->t[ti];
     int64_t r = s->start;
-    if (t->retrig) r = is_retrig(t, play_step(t, s)) ? 0 : r - t->rt_T;
+    if (t->retrig) r = is_retrig(t, play_step_x(e, ti, s, 0, NULL)) ? 0 : r - t->rt_T;
     if (r < 0) r = -r;
     int bars = e1_loop_bars[clampi(t->v[E1_P_LOOP], 0, E1_LOOPS - 1)];
     if (bars) r %= (int64_t)bars * E1_TICKS_PER_BAR;
     return r;
 }
 
-static int random_step(const e1_track_t *t, const slot_t *s)
+static int random_step(const e1_engine_t *e, int ti, const slot_t *s)
 {
-    return (int)((free_time(t, s) / div_ticks(t->v[E1_P_RATE])) & 0x3FFFFFFF);
+    return (int)((free_time(e, ti, s) / div_ticks(e->t[ti].v[E1_P_RATE])) & 0x3FFFFFFF);
 }
 
 /* Auto roll: every N bars the lanes that were rolled by hand get new dice. */
@@ -1062,7 +1248,9 @@ static void fire(e1_engine_t *e, int ti, const slot_t *s, double when, e1_emit_f
 {
     e1_track_t *t = &e->t[ti];
     int c = s->c;
-    int step = play_step(t, s);
+    int rev = 0;
+    int step = play_step_x(e, ti, s, 1, &rev);
+    int down = rev ^ (t->p_reverse != 0);        /* Dir runs backwards here: mono styles walk down */
     t->cur_step = step;
     t->cur_cycle = c;
     if (t->retrig && is_retrig(t, step)) t->rt_T = s->start;
@@ -1074,15 +1262,15 @@ static void fire(e1_engine_t *e, int ti, const slot_t *s, double when, e1_emit_f
      * and groove count from it. */
     int rb = -1;
     if (t->retrig) for (int i = 0; i < s->steps && i < 64; i++) {
-        int upto = t->p_reverse ? (i >= step) : (i <= step);
-        if (upto && is_retrig(t, i) && (rb < 0 || !t->p_reverse)) rb = i;
+        int upto = rev ? (i >= step) : (i <= step);
+        if (upto && is_retrig(t, i) && (rb < 0 || !rev)) rb = i;
     }
 
     int dpos = rb < 0 ? step : abs(step - rb);   /* where the dice lanes are */
     uint32_t seed = tseed(e, t);
-    int ridx = random_step(t, s);
+    int ridx = random_step(e, ti, s);
     /* With Loop set the chance draws come round with the loop too. */
-    int64_t idT = t->v[E1_P_LOOP] > 0 ? free_time(t, s) : s->start;
+    int64_t idT = t->v[E1_P_LOOP] > 0 ? free_time(e, ti, s) : s->start;
     int64_t id = (int64_t)((uint64_t)idT * 2654435761ULL + (uint64_t)ti);
     int prob = eff_s(e, ti, E1_P_PROB, c, ridx, step);
     if (prob < 0 && e1_chance(seed, ti, id) < -prob) return;   /* the whole pulse and its repeats */
@@ -1105,8 +1293,8 @@ static void fire(e1_engine_t *e, int ti, const slot_t *s, double when, e1_emit_f
     /* pulses so far in this cycle, in play order */
     int pidx = 0;
     for (int i = 0; i < s->steps; i++) {
-        int before = t->p_reverse ? (i > step) : (i < step);
-        if (rb >= 0 && (t->p_reverse ? (i > rb) : (i < rb))) continue;
+        int before = rev ? (i > step) : (i < step);
+        if (rb >= 0 && (rev ? (i > rb) : (i < rb))) continue;
         if (before && hit(e, ti, c, i, t->p_fill)) pidx++;
     }
 
@@ -1140,7 +1328,7 @@ static void fire(e1_engine_t *e, int ti, const slot_t *s, double when, e1_emit_f
         else if (k == 2) len *= 2.2;
         else if (k == 3) {
             int gap = 1;
-            while (gap < s->steps && !hit(e, ti, c, (step + (t->p_reverse ? -gap : gap) + s->steps * 2) % s->steps, t->p_fill)) gap++;
+            while (gap < s->steps && !hit(e, ti, c, (step + (rev ? -gap : gap) + s->steps * 2) % s->steps, t->p_fill)) gap++;
             double tie = (double)s->dur * (double)gap / sp;
             if (tie > len) len = tie;
         }
@@ -1162,7 +1350,7 @@ static void fire(e1_engine_t *e, int ti, const slot_t *s, double when, e1_emit_f
         if (t->chain[k].left > 1000) t->chain[k].left = 0;
 
     int notes[E1_POOL];
-    int n = build_notes(e, ti, c, step, pidx, dpos, shift, ridx, notes);
+    int n = build_notes(e, ti, c, step, pidx, dpos, shift, ridx, down, notes);
     int drop = prob > 0 ? prob : 0;
     const e1_track_t *to = split_to(e, t);
     for (int j = 0; j < n; j++) {
@@ -1183,7 +1371,7 @@ static void fire(e1_engine_t *e, int ti, const slot_t *s, double when, e1_emit_f
         ch->pace = pace;
         ch->len = len;
         ch->vel = vel; ch->ramp = ramp;
-        ch->cyc = c; ch->step = step; ch->pidx = pidx; ch->dpos = dpos; ch->shift = shift; ch->ridx = ridx;
+        ch->cyc = c; ch->step = step; ch->pidx = pidx; ch->dpos = dpos; ch->shift = shift; ch->ridx = ridx; ch->down = down;
         ch->prob = drop;
         ch->id = (uint32_t)id;
     }
@@ -1211,7 +1399,7 @@ static void run_chains(e1_engine_t *e, int ti, double now, e1_emit_fn emit, void
             ch->left--;
             if (!(t->v[E1_P_MUTE] || t->p_solo_mute)) {
                 int notes[E1_POOL];
-                int n = build_notes(e, ti, ch->cyc, ch->step, ch->pidx + ch->k, ch->dpos + ch->k, ch->shift, ch->ridx, notes);
+                int n = build_notes(e, ti, ch->cyc, ch->step, ch->pidx + ch->k, ch->dpos + ch->k, ch->shift, ch->ridx, ch->down, notes);
                 int vel = clampi(ch->vel + ch->ramp * 32 * ch->k / 100, 1, 127);
                 double len = ch->len;
                 if (len > ch->interval * 0.9) len = ch->interval * 0.9;
@@ -1277,7 +1465,7 @@ static double slot_offset(const e1_engine_t *e, int ti, const slot_t *s)
 {
     const e1_track_t *t = &e->t[ti];
     double off = (double)s->dur * (double)t->v[E1_P_DELAY] / 100.0;
-    int timing = eff(e, ti, E1_P_TIMING, s->c, random_step(t, s));
+    int timing = eff(e, ti, E1_P_TIMING, s->c, random_step(e, ti, s));
     if (timing) {
         int g = 1 << clampi(t->v[E1_P_SWINGGRID], 0, 2);
         if ((s->step / g) & 1) off += (double)s->dur * (double)g * (double)timing / 100.0;
@@ -1385,7 +1573,7 @@ void e1_audition(e1_engine_t *e, int track, int on, e1_emit_fn emit, void *user)
         return;
     }
     int notes[E1_POOL];
-    int n = build_notes(e, track, c, -1, 0, 0, 0, -1, notes);
+    int n = build_notes(e, track, c, -1, 0, 0, 0, -1, 0, notes);
     int vel = clampi(eff(e, track, E1_P_VELOCITY, c, -1), 1, 127);
     uint8_t ch = (uint8_t)((t->v[E1_P_CHANNEL] - 1) & 0x0F);
     t->aud_ch = ch; t->aud_ports = (uint8_t)ports;
@@ -1650,6 +1838,10 @@ static int set_track(e1_engine_t *e, int ti, const char *key, const char *val, i
     }
 
     if ((p = find_param(key)) < 0) return 0;
+    if (p == E1_P_DIR && val) {                  /* saves from before Dir had four ways */
+        if (strcmp(val, "Up") == 0) val = "Forward";
+        else if (strcmp(val, "Down") == 0) val = "Backward";
+    }
     const pdesc_t *d = &P[p];
     int v;
     if (!raw && t->step_mask && (d->flags & F_STEP)) {

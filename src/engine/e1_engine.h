@@ -59,6 +59,7 @@ enum {
     E1_P_CCMODE, E1_P_SLEW, E1_P_LOOP,
     E1_P_DENSITY, E1_P_DICETYPE, E1_P_AUTOROLL, E1_P_DICELEN,
     E1_P_FOLLOW, E1_P_SPLIT,
+    E1_P_SOURCE, E1_P_FIT, E1_P_WARP, E1_P_JITTER,
     E1_NP
 };
 
@@ -68,6 +69,14 @@ enum {
 #define E1_SCALES 17
 /* Follow: what a note track takes from the set's chord track. */
 enum { E1_FOLLOW_OFF = 0, E1_FOLLOW_BASS, E1_FOLLOW_CHORD, E1_FOLLOW_ARP };
+/* Dir: the way the playhead walks a cycle. Old saves say Up and Down. */
+enum { E1_DIR_FWD = 0, E1_DIR_BACK, E1_DIR_PEND, E1_DIR_RAND };
+/* Source: how random amounts move. Random draws at Rate; the shapes run
+ * once per period: the Loop length when Loop is set, else one pass through
+ * all the track's cycles (cut short by Length, as playback is). Parameters
+ * that change per cycle (Steps, Pulses, Rotate, Pitch, Harmony) follow the
+ * shape across the cycles instead. */
+enum { E1_SRC_RANDOM = 0, E1_SRC_DRIFT, E1_SRC_RAMPUP, E1_SRC_RAMPDN, E1_SRC_TRI, E1_SRC_SQUARE, E1_SOURCES };
 
 #define E1_DIVISIONS 15
 extern const char *const e1_division_names[E1_DIVISIONS];
@@ -103,6 +112,7 @@ typedef struct {
     int     dpos;          /* dice lane step at the pulse */
     int     shift;         /* phrase shift in scale degrees at the pulse */
     int     ridx;          /* random step at the pulse */
+    int     down;          /* mono styles walk the notes downwards */
     int     prob;          /* per-note drop chance, 0..100 */
     uint32_t id;
 } e1_chain_t;

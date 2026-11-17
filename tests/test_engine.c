@@ -1730,6 +1730,181 @@ static void test_harmony(void)
     free(e); free(c);
 }
 
+
+/* 0.4: Fit, Warp, Jitter, Dir and random shapes. */
+
+/* The step each 1/16 slot plays, slot by slot, for `slots` slots. */
+static void step_seq(e1_engine_t *e, cap_t *c, int ti, int slots, int *out)
+{
+    cap_clear(c); e1_start(e, 0);
+    for (int i = 0; i < slots; i++) {
+        g_now = i * 24.0;
+        e1_advance(e, g_now, emit, c);
+        out[i] = e->t[ti].cur_step;
+        if (c->n > MAXEV - 200) cap_clear(c);
+    }
+    e1_stop(e, emit, c);
+}
+
+static void test_shapes_time(void)
+{
+    e1_engine_t *e = eng_new(); cap_t *c = cap_new();
+    non_t o[1024]; int n, sq[256];
+
+    /* Fit: 5 steps spread over one bar, Division ignored */
+    setup(e); fresh(e, 0); S(e, 0, "steps", "5"); S(e, 0, "pulses", "5"); S(e, 0, "cycles", "1");
+    S(e, 0, "fit", "On"); S(e, 0, "division", "1/4");
+    run_count(e, c, 0, 2);
+    n = ons(c, 0, o, 1024);
+    int ok = n == 10;
+    for (int i = 0; i < n && ok; i++) if (fabs(o[i].at - i * 76.8) > 1.0) ok = 0;
+    CHECKM(ok, "fit 5 over a bar: n=%d", n);
+    /* Fit over Length 2: one cycle lasts two bars, cycles still advance */
+    S(e, 0, "length", "2"); S(e, 0, "cycles", "2"); S(e, 0, "c2.pulses", "-4");
+    run_count(e, c, 0, 4);
+    n = ons(c, 0, o, 1024);
+    CHECKM(n == 6 && fabs(o[1].at - 153.6) <= 1.0 && o[5].at == 768.0, "fit length 2: n=%d", n);
+    S(e, 0, "fit", "Off");
+    run_count(e, c, 0, 1);
+    n = ons(c, 0, o, 1024);
+    CHECK(n == 4 && o[1].at == 96.0);                      /* Fit off: back on the 1/4 grid */
+
+    /* Warp: positive rushes, negative drags, the cycle keeps its length */
+    for (int w = -1; w <= 1; w += 2) {
+        setup(e); fresh(e, 0); S(e, 0, "steps", "8"); S(e, 0, "pulses", "8"); S(e, 0, "cycles", "1");
+        S(e, 0, "warp", w > 0 ? "100" : "-100");
+        run_count(e, c, 0, 1);
+        n = ons(c, 0, o, 1024);
+        int mono = 1;
+        for (int i = 2; i < 9 && i < n; i++) {
+            double a = o[i - 1].at - o[i - 2].at, b = o[i].at - o[i - 1].at;
+            if (w > 0 ? !(b < a) : !(b > a)) mono = 0;
+        }
+        CHECKM(n == 16 && o[0].at == 0 && o[8].at == 192.0 && mono, "warp %d n=%d", w, n);
+    }
+    setup(e); fresh(e, 0); S(e, 0, "steps", "64"); S(e, 0, "pulses", "64"); S(e, 0, "cycles", "1"); S(e, 0, "division", "1/64");
+    S(e, 0, "warp", "-100");                                /* tiny steps still each get a tick */
+    run_count(e, c, 0, 2);
+    n = ons(c, 0, o, 1024);
+    CHECK(n == 128 && o[64].at == 384.0);
+    S(e, 0, "fit", "On"); S(e, 0, "warp", "60");              /* Fit and Warp together */
+    run_count(e, c, 0, 2);
+    n = ons(c, 0, o, 1024);
+    CHECK(n == 128 && o[64].at == 384.0 && o[1].at > 6.0);
+
+    /* Dir */
+    setup(e); fresh(e, 0); S(e, 0, "steps", "4"); S(e, 0, "cycles", "1");
+    step_seq(e, c, 0, 12, sq);
+    CHECK(sq[0] == 0 && sq[3] == 3 && sq[4] == 0);
+    S(e, 0, "dir", "Backward");
+    step_seq(e, c, 0, 8, sq);
+    CHECK(sq[0] == 3 && sq[1] == 2 && sq[3] == 0 && sq[4] == 3);
+    e1_perf(e, 1, "reverse", 1);                            /* Reverse on top of Backward: forward */
+    step_seq(e, c, 0, 8, sq);
+    CHECK(sq[0] == 0 && sq[1] == 1 && sq[3] == 3);
+    e1_perf(e, 1, "reverse", 0);
+    S(e, 0, "dir", "Pendulum");
+    step_seq(e, c, 0, 12, sq);
+    static const int pend[12] = { 0, 1, 2, 3, 2, 1, 0, 1, 2, 3, 2, 1 };
+    CHECK(memcmp(sq, pend, sizeof pend) == 0);
+    S(e, 0, "dir", "Random"); S(e, 0, "steps", "16");
+    step_seq(e, c, 0, 64, sq);
+    int inr = 1, fwd = 1, seen = 0;
+    for (int i = 0; i < 64; i++) { if (sq[i] < 0 || sq[i] > 15) inr = 0; if (sq[i] != i % 16) fwd = 0; seen |= 1 << sq[i]; }
+    CHECK(inr && !fwd && __builtin_popcount((unsigned)seen) >= 8);
+    CHECK(memcmp(sq, sq + 16, 16 * sizeof(int)) != 0);
+    S(e, 0, "loop", "1");                                   /* looped: the same order every bar */
+    step_seq(e, c, 0, 64, sq);
+    CHECK(memcmp(sq, sq + 16, 16 * sizeof(int)) == 0 && memcmp(sq, sq + 48, 16 * sizeof(int)) == 0);
+    /* old saves: Up and Down load as Forward and Backward */
+    e1_load_track(e, 0, "steps=4\ndir=Down\n");
+    char b[32]; e1_get(e, 0, "dir", b, sizeof b); CHECK(strcmp(b, "Backward") == 0);
+    e1_load_track(e, 0, "dir=Up\n"); e1_get(e, 0, "dir", b, sizeof b); CHECK(strcmp(b, "Forward") == 0);
+
+    /* Jitter: off is plain, on moves the playhead; Loop lock repeats it */
+    setup(e); fresh(e, 0); S(e, 0, "jitter", "0");
+    step_seq(e, c, 0, 64, sq);
+    ok = 1; for (int i = 0; i < 64; i++) if (sq[i] != i % 16) ok = 0;
+    CHECK(ok);
+    S(e, 0, "jitter", "60");
+    step_seq(e, c, 0, 64, sq);
+    int moved = 0; for (int i = 0; i < 64; i++) if (sq[i] != i % 16) moved++;
+    ok = 1; for (int i = 0; i < 64; i++) if (sq[i] < 0 || sq[i] > 15) ok = 0;
+    CHECK(moved > 8 && ok && memcmp(sq, sq + 16, 16 * sizeof(int)) != 0);
+    int jr[256]; step_seq(e, c, 0, 64, jr);
+    CHECK(memcmp(sq, jr, 64 * sizeof(int)) == 0);           /* the same draws from the same start */
+    S(e, 0, "loop", "1");
+    step_seq(e, c, 0, 64, sq);
+    CHECK(memcmp(sq, sq + 16, 16 * sizeof(int)) == 0 && memcmp(sq, sq + 32, 16 * sizeof(int)) == 0);
+    S(e, 0, "steps", "32"); S(e, 0, "loop", "1");           /* a 2-bar cycle under a 1-bar loop */
+    step_seq(e, c, 0, 128, sq);
+    CHECK(memcmp(sq, sq + 32, 32 * sizeof(int)) == 0);
+    S(e, 0, "rseed", "77");                                 /* a re-roll gives a new walk */
+    step_seq(e, c, 0, 32, jr);
+    CHECK(memcmp(sq, jr, 32 * sizeof(int)) != 0);
+
+    /* Shapes: RampUp over the Loop, Square, Drift */
+    setup(e); fresh(e, 0); S(e, 0, "pulses", "16"); S(e, 0, "velocity", "20"); S(e, 0, "r.velocity", "100");
+    S(e, 0, "source", "RampUp"); S(e, 0, "loop", "1");
+    run_count(e, c, 0, 2);
+    n = ons(c, 0, o, 1024);
+    ok = n == 32;
+    for (int i = 0; i < n && ok; i++) if (o[i].vel != 20 + (int)lrint(64.0 * (i % 16) / 16.0)) ok = 0;
+    CHECKM(ok, "rampup n=%d v0=%d v15=%d", n, o[0].vel, o[15].vel);
+    S(e, 0, "source", "RampDn");
+    run_count(e, c, 0, 1); n = ons(c, 0, o, 1024);
+    CHECK(n == 16 && o[0].vel == 84 && o[15].vel < o[1].vel);
+    S(e, 0, "source", "Tri");
+    run_count(e, c, 0, 1); n = ons(c, 0, o, 1024);
+    CHECK(n == 16 && o[0].vel == 20 && o[8].vel == 84 && o[15].vel < 30);
+    S(e, 0, "source", "Square");
+    run_count(e, c, 0, 1); n = ons(c, 0, o, 1024);
+    CHECK(n == 16 && o[0].vel == 84 && o[7].vel == 84 && o[8].vel == 20 && o[15].vel == 20);
+    S(e, 0, "loop", "Free"); S(e, 0, "cycles", "2");        /* free: one pass through the cycles, 2 bars */
+    S(e, 0, "source", "RampUp");
+    run_count(e, c, 0, 4); n = ons(c, 0, o, 1024);
+    CHECK(n == 64 && o[0].vel == 20 && o[16].vel == 52 && o[32].vel == 20 && o[31].vel > o[30].vel);
+    S(e, 0, "source", "Drift"); S(e, 0, "loop", "1");
+    run_count(e, c, 0, 2); n = ons(c, 0, o, 1024);
+    int smooth = 1, varied = 0;
+    for (int i = 1; i < n; i++) { if (abs(o[i].vel - o[i - 1].vel) > 16) smooth = 0; if (o[i].vel != o[0].vel) varied = 1; }
+    uint32_t d1 = bar_sig(c, 0);
+    CHECK(n == 32 && smooth && varied && d1 == bar_sig(c, 1));
+    S(e, 0, "rseed", "1234");                               /* re-roll: a new drift */
+    run_count(e, c, 0, 1);
+    CHECK(bar_sig(c, 0) != d1);
+    /* per-cycle parameters follow the shape across the cycles */
+    setup(e); fresh(e, 0); S(e, 0, "pulses", "1"); S(e, 0, "cycles", "4"); S(e, 0, "pool", "60");
+    S(e, 0, "r.pitch", "100"); S(e, 0, "source", "RampUp");
+    run_count(e, c, 0, 4); n = ons(c, 0, o, 1024);
+    CHECK(n == 4 && o[0].note == 60 && o[1].note > o[0].note && o[3].note > o[2].note);
+    /* CC lanes take shapes too */
+    setup(e); fresh(e, 11); S(e, 11, "type", "CC"); S(e, 11, "pulses", "16"); S(e, 11, "cc1", "0"); S(e, 11, "r.cc1", "100");
+    S(e, 11, "source", "RampUp"); S(e, 11, "loop", "1");
+    run_count(e, c, 11, 1);
+    int last = -1, rising = 1, ccs = 0;
+    for (int i = 0; i < c->n; i++) if ((c->ev[i].st & 0xF0) == 0xB0 && c->ev[i].d1 == e->t[11].cc_num[0]) { if (c->ev[i].d2 < last) rising = 0; last = c->ev[i].d2; ccs++; }
+    CHECK(ccs >= 16 && rising && last > 100);
+
+    /* save: the new keys go through the dump */
+    setup(e); fresh(e, 0); S(e, 0, "source", "Tri"); S(e, 0, "fit", "On"); S(e, 0, "warp", "-40"); S(e, 0, "jitter", "25"); S(e, 0, "dir", "Pendulum");
+    char d[16384]; e1_dump_track(e, 0, d, sizeof d);
+    CHECK(strstr(d, "source=Tri\n") && strstr(d, "fit=On\n") && strstr(d, "warp=-40\n") && strstr(d, "jitter=25\n") && strstr(d, "dir=Pendulum\n"));
+    fresh(e, 1); e1_load_track(e, 1, d);
+    CHECK(e->t[1].v[E1_P_SOURCE] == E1_SRC_TRI && e->t[1].v[E1_P_FIT] == 1 && e->t[1].v[E1_P_WARP] == -40 &&
+          e->t[1].v[E1_P_JITTER] == 25 && e->t[1].v[E1_P_DIR] == E1_DIR_PEND);
+    e1_load_track(e, 1, "steps=8\n");                       /* old saves: everything as before */
+    CHECK(e->t[1].v[E1_P_SOURCE] == 0 && e->t[1].v[E1_P_FIT] == 0 && e->t[1].v[E1_P_WARP] == 0 && e->t[1].v[E1_P_JITTER] == 0);
+
+    /* everything at once stays balanced */
+    setup(e); fresh(e, 0); S(e, 0, "pulses", "7"); S(e, 0, "steps", "11"); S(e, 0, "fit", "On"); S(e, 0, "warp", "70");
+    S(e, 0, "jitter", "40"); S(e, 0, "dir", "Pendulum"); S(e, 0, "repeats", "2"); S(e, 0, "r.velocity", "80"); S(e, 0, "source", "Drift");
+    S(e, 0, "timing", "20"); S(e, 0, "c2.warp", "-150"); S(e, 0, "cycles", "3");
+    cap_clear(c); e1_start(e, 0); run(e, c, 0, 384 * 12, 7.3); e1_stop(e, emit, c);
+    CHECK(balanced(c) && count_ons(c, 0, 0, 1e12) > 40);
+    free(e); free(c);
+}
+
 int main(int argc, char **argv)
 {
     if (argc == 3 && !strcmp(argv[1], "--probe")) return probe(argv[2]);
@@ -1762,6 +1937,7 @@ int main(int argc, char **argv)
     test_v04();
     test_dice();
     test_harmony();
+    test_shapes_time();
 
     /* BUG: parse_value computes cur + atoi(val + 1) in int: signed overflow. */
     run_probe("dplus", "\"d+2147483647\" overflows int in parse_value");

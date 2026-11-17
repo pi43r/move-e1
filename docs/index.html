@@ -138,6 +138,7 @@ pre code { overflow-wrap: normal; }
       <li><a href="#cycles">Cycles</a></li>
       <li><a href="#steps">Single steps</a></li>
       <li><a href="#random">Random</a></li>
+      <li><a href="#time">Shapes and time</a></li>
       <li><a href="#perform">Perform, Freeze, Temp</a></li>
       <li><a href="#patterns">Patterns, sets, menu</a></li>
       <li><a href="#connect">Move or computer</a></li>
@@ -414,7 +415,7 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
           <tr><td>Grey</td><td>Choices not chosen.</td></tr>
           <tr><td>Blue</td><td>Triplets, black keys, scales, saved patterns.</td></tr>
           <tr><td>Green</td><td>Bars for Length and Quant. Dark green: styles, grooves, phrases.</td></tr>
-          <tr><td>Pink</td><td>Modifier pads at the end of a row: octave, direction, phrase rate, swing grid, Choke or Tail.</td></tr>
+          <tr><td>Pink</td><td>Modifier pads at the end of a row: octave, Fit, phrase rate, swing grid, Choke or Tail.</td></tr>
           <tr><td>Red</td><td>Edited cycles and steps. Tracks waiting to be muted.</td></tr>
         </tbody>
       </table>
@@ -473,9 +474,9 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
           <tr><td>3</td><td>Tempo: internal tempo, 20 to 300 BPM.</td><td>PhrRate: phrase length, x1 is 4 bars, x2 is 2, /2 is 8.</td><td>Grid: swing on single steps, pairs or fours.</td></tr>
           <tr><td>4</td><td>ClkOut: send MIDI clock to the computer.</td><td>Follow: Off, Bass, Chord or Arp. See Harmony.</td><td>Loop: Free, or 1, 2, 4 or 8 bars after which chance and random values repeat.</td></tr>
           <tr><td>5</td><td>Quant: when a queued pattern starts.</td><td>Split: Off, or a track. See Harmony.</td><td>AutoRol: Off, or new dice every 1, 2, 4 or 8 bars.</td></tr>
-          <tr><td>6</td><td>SongRoot: the song's root note.</td><td>Mute</td><td></td></tr>
-          <tr><td>7</td><td>SongScale: the song's scale.</td><td>Dir: Mono styles play up or down.</td><td></td></tr>
-          <tr><td>8</td><td>ChordTrk: Off, or the chord track 1 to 16.</td><td>DiceLen: the Lengths dice, On or Off.</td><td></td></tr>
+          <tr><td>6</td><td>SongRoot: the song's root note.</td><td>Mute</td><td>Source: how random amounts move. See Shapes.</td></tr>
+          <tr><td>7</td><td>SongScale: the song's scale.</td><td>Dir: Forward, Backward, Pendulum or Random. See Time.</td><td>Warp. See Time.</td></tr>
+          <tr><td>8</td><td>ChordTrk: Off, or the chord track 1 to 16.</td><td>DiceLen: the Lengths dice, On or Off.</td><td>Jitter. See Time.</td></tr>
         </tbody>
       </table>
     </div>
@@ -504,10 +505,11 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
       <table>
         <thead><tr><th>Knob</th><th>Pads</th></tr></thead>
         <tbody>
-          <tr><td>Div, Time</td><td>Upper row: 1/1 to 1/64 and 1/4 dotted. Lower row: dotted 1/8 and 1/16, then triplets.</td></tr>
+          <tr><td>Div, Time</td><td>Upper row: 1/1 to 1/64 and 1/4 dotted. Lower row: dotted 1/8 and 1/16, then triplets. Div only: the pink pad at the lower right turns Fit on and off.</td></tr>
+          <tr><td>Source</td><td>Random purple, Drift cyan, RampUp green, RampDn yellow, Tri orange, Square blue. The choice is white. Lower right, pink: new dice for the track.</td></tr>
           <tr><td>Pitch</td><td>A one-octave keyboard, black keys above. Tap a key to add it to the pool or take it out. <kbd>Shift</kbd> + key only plays it. The end pads change octave and light up when the pool has notes that way. The footer shows the octave and the pool notes in it. Up to 8 notes.</td></tr>
           <tr><td>Root</td><td>The same keyboard. Tap the root.</td></tr>
-          <tr><td>Style, Phrase, Groove</td><td>One pad per shape. The purple pad is Dice. The end pads set Dir or PhrRate.</td></tr>
+          <tr><td>Style, Phrase, Groove</td><td>One pad per shape. The purple pad is Dice. The Phrase end pads set PhrRate.</td></tr>
           <tr><td>Density</td><td>Pads 1 to 16. Hits that Density takes out stay dim on the step row.</td></tr>
           <tr><td>Repeats</td><td>14 counts per page. Upper right: Choke or Tail. Lower right: INF. <kbd>Delete</kbd> lights up while repeats run. Press it to stop them. The next hit starts new ones.</td></tr>
           <tr><td>Length</td><td>One pad per length. Lower right, pink: jump to a random start point. A tap on <kbd>Delete</kbd> does the same. <kbd>Shift</kbd> + the pink pad puts the track back in line with the bar.</td></tr>
@@ -616,6 +618,27 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
     <p><kbd>Shift</kbd> + knob 4 on the Left page (Density) sets how many of a track's hits sound. 16 plays them all, 8 plays half, 0 plays none. The same hits drop out every time round, the weakest beats first. Roll Rhythm to choose another order. Density works on drum and CC tracks too, and Fill still adds its hits.</p>
     <h3>Auto roll</h3>
     <p>Auto roll rolls new dice by itself. Hold <kbd>Random</kbd> and tap a pad in the lower row: Off, 1, 2, 4 or 8 bars. <kbd>Shift</kbd> + <kbd>Random</kbd> + Plus or Minus steps through the same values. Only lines you rolled by hand at least once get new dice. The footer shows AUTO while <kbd>Random</kbd> is held. The pink pad at the lower right rolls the track's random values, as <kbd>Random</kbd> + jog click does.</p>
+  </section>
+
+  <section id="time">
+    <h2>Shapes and time</h2>
+    <h3>Shapes</h3>
+    <p>Source sets how a track's random amounts move. Hold <kbd>Random</kbd> and press Left or Right to step through the sources. The footer shows SRC while <kbd>Random</kbd> is held. <kbd>Random</kbd> + <kbd>Shift</kbd> + knob 3 on the Left page shows one pad per source.</p>
+    <ul>
+      <li>Random: a new value at each Rate step, with the chance set by <kbd>Random</kbd> + jog wheel.</li>
+      <li>Drift: a slow, smooth wander. Rolling new dice gives a new wander.</li>
+      <li>RampUp, RampDn, Tri, Square: each amount follows the shape, sampled at Rate.</li>
+    </ul>
+    <p>A shape runs once per Loop when Loop is set. With Loop at Free it runs once through all the track's cycles, cut short by Length. Steps, Pulses, Rotate, Pitch and Harmony change once per cycle, so they follow the shape from cycle to cycle. The shapes ignore the chance.</p>
+    <h3>Time</h3>
+    <p>Hold <kbd>Random</kbd> and use the Left page knobs that take no random amount:</p>
+    <ul>
+      <li>Knob 3, Jitter, 0 to 100: on each step, with that chance, the playhead skips a step ahead, plays the step again or steps back, and carries on from there. It starts fresh with each cycle. With Loop set the same jumps come round every loop.</li>
+      <li>Knob 4, Warp, -100 to +100: positive values start slow and speed up, negative values start fast and slow down. The cycle keeps its length. Edit it per cycle for a bouncing-ball fill.</li>
+      <li><kbd>Shift</kbd> + knob 4, Fit: the track's steps are spread evenly over its Length, or over one bar when Length is Off. 5 steps then play a true 5 against 4. Each cycle lasts the Length. Division is ignored and reads FIT. The pink pad at the lower right of the Div pads does the same.</li>
+    </ul>
+    <p>Dir on the Settings Track page (knob 7) sets the way the playhead walks: Forward, Backward, Pendulum (there and back without playing the ends twice) or Random (a random step each time, the same order every loop when Loop is set). Mono styles walk their notes down while the playhead runs backwards. The Reverse perform pad flips whichever way the track runs.</p>
+    <p>Source, Warp and Jitter are also on the Settings Track page, with <kbd>Shift</kbd> on knobs 6, 7 and 8.</p>
   </section>
 
   <section id="perform">

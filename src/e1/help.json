@@ -276,6 +276,34 @@
       ]
     },
     {
+      "title": "Shapes and time",
+      "lines": [
+        "Random+Left/Right:",
+        " source. Random,",
+        " Drift, RampUp,",
+        " RampDn, Tri,Square.",
+        "A shape runs once",
+        " per Loop, or once",
+        " through all cycles.",
+        "Hold Random, Left",
+        " page knobs:",
+        "3 Jitter: playhead",
+        " skips, repeats or",
+        " steps back.",
+        "4 Warp: steps rush",
+        " (+) or drag (-).",
+        "Shift+3: source.",
+        "Shift+4: Fit.",
+        "Fit: steps spread",
+        " over Length, or 1",
+        " bar. Div pad 16.",
+        "Dir: Settings, Track",
+        " knob 7. Forward,",
+        " Backward, Pendulum,",
+        " Random."
+      ]
+    },
+    {
       "title": "Harmony",
       "lines": [
         "Settings, Set page:",
