@@ -2,7 +2,7 @@
   "id": "e1",
   "name": "E-1",
   "abbrev": "E-1",
-  "version": "0.3.9",
+  "version": "0.4.0",
   "author": "pi43r",
   "description": "16-track Euclidean performance sequencer for Move and for a computer over USB-C. Inspired by the Torso T-1; not affiliated with Torso Electronics.",
   "component_type": "tool",
