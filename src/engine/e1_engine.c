@@ -95,6 +95,8 @@ typedef struct {
     uint8_t span;          /* how far a random amount of 100 can move it */
 } pdesc_t;
 
+_Static_assert(E1_NP <= 64, "step rows keep one bit per parameter");
+
 static const pdesc_t P[E1_NP] = {
     [E1_P_TYPE]       = { "type",       0, 1, 0,     TYPE_NAMES,   0, 0 },
     [E1_P_STEPS]      = { "steps",      1, 64, 16,   NULL,         F_CYC | F_RC, 8 },
@@ -180,36 +182,82 @@ static uint32_t tseed(const e1_engine_t *e, const e1_track_t *t)
 }
 
 static int lowest_bit(uint32_t m) { for (int i = 0; i < 16; i++) if (m & (1u << i)) return i; return -1; }
+static int first_step(uint64_t m) { for (int i = 0; i < 64; i++) if (m >> i & 1) return i; return -1; }
 
 /* The value parameter p has in cycle c. `ridx` is the random step for
  * rate-driven random, or -1 to leave that out (used for display). */
-static int sed_find(const e1_track_t *t, int step)
+/* Step rows. cyc = -1 is the row for every cycle, else the row for cycle cyc. */
+static int sed_find(const e1_track_t *t, int step, int cyc)
 {
     if (step < 0) return -1;
-    for (int i = 0; i < E1_SEDITS; i++) if (t->sed_step[i] == step + 1) return i;
+    for (int i = 0; i < E1_SEDITS; i++) if (t->sed_step[i] == step + 1 && t->sed_cyc[i] == cyc + 1) return i;
     return -1;
 }
 
-static int sed_get(e1_track_t *t, int step)        /* find or claim a row */
+static void sed_free(e1_track_t *t, int i)
 {
-    int i = sed_find(t, step);
+    t->sed_step[i] = 0; t->sed_cyc[i] = 0; t->sed_has[i] = 0;
+    memset(t->sed[i], 0, sizeof t->sed[i]);
+    for (int l = 0; l < E1_CC_LANES; l++) t->sed_cc[i][l] = -1;
+}
+
+static int sed_used(const e1_track_t *t, int i)
+{
+    if (!t->sed_step[i]) return 0;
+    if (t->sed_has[i]) return 1;
+    for (int l = 0; l < E1_CC_LANES; l++) if (t->sed_cc[i][l] >= 0) return 1;
+    return 0;
+}
+
+static int sed_get(e1_track_t *t, int step, int cyc)        /* find or claim a row */
+{
+    int i = sed_find(t, step, cyc);
     if (i >= 0) return i;
-    for (i = 0; i < E1_SEDITS; i++) if (!t->sed_step[i]) {
-        memset(t->sed[i], 0, sizeof t->sed[i]);
+    if (step < 0 || step >= 64 || cyc < -1 || cyc >= E1_CYCLES) return -1;
+    for (i = 0; i < E1_SEDITS; i++) if (!sed_used(t, i)) {      /* a row left empty is free again */
+        sed_free(t, i);
         t->sed_step[i] = (uint8_t)(step + 1);
+        t->sed_cyc[i] = (uint8_t)(cyc + 1);
         return i;
     }
     return -1;
 }
 
-uint64_t e1_steps_edited(const e1_track_t *t)
+uint64_t e1_steps_edited_in(const e1_track_t *t, int cycle)
 {
     uint64_t m = 0;
-    for (int i = 0; i < E1_SEDITS; i++) {
-        if (!t->sed_step[i]) continue;
-        for (int p = 0; p < E1_NP; p++) if (t->sed[i][p]) { m |= 1ULL << (t->sed_step[i] - 1); break; }
-    }
+    for (int i = 0; i < E1_SEDITS; i++)
+        if (t->sed_cyc[i] == cycle + 1 && sed_used(t, i)) m |= 1ULL << (t->sed_step[i] - 1);
     return m;
+}
+
+uint64_t e1_steps_edited(const e1_track_t *t) { return e1_steps_edited_in(t, -1); }
+
+/* The step's own offset for parameter p in cycle c: the cycle's row first,
+ * then the every-cycle row. Returns 0 when neither sets it. */
+static int step_off(const e1_track_t *t, int p, int c, int step, int *off)
+{
+    if (step < 0) return 0;
+    int r = (c >= 0 && c < E1_CYCLES) ? sed_find(t, step, c) : -1;
+    if (r >= 0 && (t->sed_has[r] >> p & 1)) { *off = t->sed[r][p]; return 1; }
+    r = sed_find(t, step, -1);
+    if (r >= 0 && (t->sed_has[r] >> p & 1)) { *off = t->sed[r][p]; return 1; }
+    return 0;
+}
+
+/* Stored value of p for a step in a cycle, random left out:
+ * step in cycle, then step, then cycle, then base. */
+static int stored_val(const e1_track_t *t, int p, int c, int step);
+
+/* A step's CC value in a cycle, -1 when the step sets none for the lane. */
+static int step_cc(const e1_track_t *t, int lane, int c, int step)
+{
+    if (step < 0) return -1;
+    int r = (c >= 0 && c < E1_CYCLES) ? sed_find(t, step, c) : -1;
+    if (r >= 0 && t->sed_cc[r][lane] >= 0) return t->sed_cc[r][lane];
+    r = sed_find(t, step, -1);
+    if (r >= 0 && t->sed_cc[r][lane] >= 0) return t->sed_cc[r][lane];
+    return -1;
 }
 
 /* ---------------------------------------------------------- shapes */
@@ -266,9 +314,7 @@ static int eff_s(const e1_engine_t *e, int ti, int p, int c, int ridx, int step)
 {
     const e1_track_t *t = &e->t[ti];
     const pdesc_t *d = &P[p];
-    int v = t->v[p];
-    if ((d->flags & F_CYC) && c >= 0 && c < E1_CYCLES) v += t->cyc[c][p];
-    if ((d->flags & F_STEP) && step >= 0) { int r = sed_find(t, step); if (r >= 0) v += t->sed[r][p]; }
+    int v = stored_val(t, p, c, step);
     if (t->rnd[p] && t->v[E1_P_RANDOM] > 0 && t->v[E1_P_SOURCE] != E1_SRC_RANDOM) {
         int idx = (d->flags & F_RC) ? c : ((d->flags & F_RR) ? ridx : -1);
         if (idx >= 0)
@@ -283,6 +329,15 @@ static int eff_s(const e1_engine_t *e, int ti, int p, int c, int ridx, int step)
             }
         }
     }
+    return clampi(v, d->lo, d->hi);
+}
+
+static int stored_val(const e1_track_t *t, int p, int c, int step)
+{
+    const pdesc_t *d = &P[p];
+    int v = t->v[p], off;
+    if ((d->flags & F_STEP) && step_off(t, p, c, step, &off)) v += off;
+    else if ((d->flags & F_CYC) && c >= 0 && c < E1_CYCLES) v += t->cyc[c][p];
     return clampi(v, d->lo, d->hi);
 }
 
@@ -316,6 +371,7 @@ void e1_track_defaults(e1_track_t *t, int index)
         t->cc_val[i] = -1;
         t->cc_num[i] = (uint8_t)(i < 14 ? 70 + i : (i == 14 ? 1 : 74));
     }
+    for (int i = 0; i < E1_SEDITS; i++) sed_free(t, i);
     snprintf(t->name, sizeof t->name, "%s", DEFAULT_NAMES[index >= 0 && index < E1_TRACKS ? index : 0]);
     runtime_reset(t);
 }
@@ -1119,12 +1175,16 @@ static void cc_send(e1_track_t *t, int lane, int value, int ports, e1_emit_fn em
     t->cc_sent[lane] = (int16_t)value;
 }
 
-static int cc_eff(const e1_engine_t *e, int ti, int lane, int c, int ridx)
+/* A lane's value: the step's own (in the cycle, then every cycle), else the
+ * cycle's offset from base. step = -1 leaves the step out. */
+static int cc_eff(const e1_engine_t *e, int ti, int lane, int c, int ridx, int step)
 {
     const e1_track_t *t = &e->t[ti];
     int v = t->cc_val[lane];
     if (v < 0) return -1;
-    if (c >= 0 && c < E1_CYCLES) v += t->cc_cyc[c][lane];
+    int sv = step_cc(t, lane, c, step);
+    if (sv >= 0) v = sv;
+    else if (c >= 0 && c < E1_CYCLES) v += t->cc_cyc[c][lane];
     if (t->cc_rnd[lane] && t->v[E1_P_RANDOM] > 0 && ridx >= 0 && t->v[E1_P_SOURCE] != E1_SRC_RANDOM) {
         v += (int)lrint((double)t->cc_rnd[lane] / 100.0 * 127.0 * shape_at(e, ti, ti * 64 + 48 + lane, ridx, 0));
     } else if (t->cc_rnd[lane] && t->v[E1_P_RANDOM] > 0 && ridx >= 0) {
@@ -1280,7 +1340,7 @@ static void fire(e1_engine_t *e, int ti, const slot_t *s, double when, e1_emit_f
         int ports = e1_ports(e, t);
         t->flash = 1;
         for (int l = 0; l < E1_CC_LANES; l++) {
-            int v = cc_eff(e, ti, l, c, ridx);
+            int v = cc_eff(e, ti, l, c, ridx, step);
             if (v < 0) continue;
             int mode = t->v[E1_P_CCMODE];
             if (mode == E1_CC_ON_PULSE) cc_send(t, l, v, ports, emit, user);
@@ -1432,11 +1492,12 @@ static void cc_service(e1_engine_t *e, e1_emit_fn emit, void *user)
         int glide = t->v[E1_P_CCMODE] == E1_CC_GLIDE;
         int slew = t->v[E1_P_SLEW];
         int dc = e1_display_cycle(t);
+        int ds = first_step(t->step_mask);       /* a step being edited is heard as edited */
         for (int l = 0; l < E1_CC_LANES && budget > 0; l++) {
             if (t->cc_val[l] < 0) { t->cc_dirty &= ~(1u << l); continue; }
             if (t->cc_dirty & (1u << l)) {
                 t->cc_dirty &= ~(1u << l);
-                int v = cc_eff(e, ti, l, dc, -1);
+                int v = cc_eff(e, ti, l, dc, -1, ds);
                 if (glide && slew > 0) t->cc_target[l] = (int16_t)v;
                 else {
                     if (!silent) { cc_send(t, l, v, ports, emit, user); budget--; }
@@ -1567,7 +1628,7 @@ void e1_audition(e1_engine_t *e, int track, int on, e1_emit_fn emit, void *user)
     t->flash = 1;
     if (t->v[E1_P_TYPE] == E1_TYPE_CC) {
         for (int l = 0; l < E1_CC_LANES; l++) {
-            int v = cc_eff(e, track, l, c, -1);
+            int v = cc_eff(e, track, l, c, -1, -1);
             if (v >= 0) cc_send(t, l, v, ports, emit, user);
         }
         return;
@@ -1701,6 +1762,24 @@ static int set_track(e1_engine_t *e, int ti, const char *key, const char *val, i
     }
     if ((lane = parse_lane(key, "cc")) >= 0) {
         int v;
+        if (!raw && t->step_mask && t->cc_val[lane] >= 0) {     /* picked steps: their own lane values */
+            int ok = 0;
+            for (int st = 0; st < 64; st++) {
+                if (!(t->step_mask >> st & 1)) continue;
+                for (int c = em ? 0 : -1; c < (em ? E1_CYCLES : 0); c++) {
+                    if (c >= 0 && !(em & (1u << c))) continue;
+                    int r = sed_get(t, st, c);
+                    if (r < 0) continue;                         /* every row is taken */
+                    int cur = step_cc(t, lane, c, st);
+                    if (cur < 0) cur = clampi(t->cc_val[lane] + (c >= 0 ? t->cc_cyc[c][lane] : 0), 0, 127);
+                    if (!parse_value(val, cur, 0, 127, NULL, &v)) return 0;
+                    t->sed_cc[r][lane] = (int16_t)v;
+                    ok = 1;
+                }
+            }
+            if (ok) t->cc_dirty |= (1u << lane);
+            return ok;
+        }
         if (em && t->cc_val[lane] >= 0) {
             for (int c = 0; c < E1_CYCLES; c++) {
                 if (!(em & (1u << c))) continue;
@@ -1779,14 +1858,23 @@ static int set_track(e1_engine_t *e, int ti, const char *key, const char *val, i
         for (char *q = t->name; *q; q++) if ((unsigned char)*q < 0x20 || *q == 0x7F || *q == '=' || *q == '"' || *q == '\\') *q = ' ';
         return 1;
     }
-    /* s<N>.<key>: one step's offset, as saved */
+    /* s<N>.<key> / s<N>c<M>.<key>: one step's offset or CC value, as saved */
     if (key[0] == 's' && key[1] >= '0' && key[1] <= '9') {
         const char *dot = strchr(key, '.');
         if (dot) {
-            int st = atoi(key + 1) - 1, r;
-            if (st < 0 || st >= 64 || (p = find_param(dot + 1)) < 0 || !(P[p].flags & F_STEP)) return 0;
-            if ((r = sed_get(t, st)) < 0) return 0;
+            char *end = NULL;
+            int st = (int)strtol(key + 1, &end, 10) - 1, c = -1, r;
+            if (end && *end == 'c') c = (int)strtol(end + 1, &end, 10) - 1;
+            if (end != dot || st < 0 || st >= 64 || c < -1 || c >= E1_CYCLES) return 0;
+            if ((lane = parse_lane(dot + 1, "cc")) >= 0) {
+                if ((r = sed_get(t, st, c)) < 0) return 0;
+                t->sed_cc[r][lane] = (int16_t)clampi(atoi(val), 0, 127);
+                return 1;
+            }
+            if ((p = find_param(dot + 1)) < 0 || !(P[p].flags & F_STEP)) return 0;
+            if ((r = sed_get(t, st, c)) < 0) return 0;
             t->sed[r][p] = (int16_t)clampi(atoi(val), P[p].lo - P[p].hi, P[p].hi - P[p].lo);
+            t->sed_has[r] |= 1ULL << p;
             return 1;
         }
     }
@@ -1796,9 +1884,12 @@ static int set_track(e1_engine_t *e, int ti, const char *key, const char *val, i
     }
     if (strcmp(key, "clearstep") == 0) {
         int st = atoi(val) - 1;
-        if (st < 0) { memset(t->sed_step, 0, sizeof t->sed_step); t->step_mask = 0; return 1; }   /* 0 = every step */
-        int r = sed_find(t, st);
-        if (r >= 0) t->sed_step[r] = 0;
+        if (st < 0) { for (int i = 0; i < E1_SEDITS; i++) sed_free(t, i); t->step_mask = 0; return 1; }   /* 0 = every step */
+        for (int i = 0; i < E1_SEDITS; i++) {
+            if (t->sed_step[i] != st + 1) continue;
+            int c = t->sed_cyc[i] - 1;            /* in cycle edit: the every-cycle row and the edited cycles' */
+            if (!em || c < 0 || (em & (1u << c))) sed_free(t, i);
+        }
         return 1;
     }
     if (strcmp(key, "edit") == 0) {
@@ -1811,6 +1902,7 @@ static int set_track(e1_engine_t *e, int ti, const char *key, const char *val, i
         memset(t->cyc[c], 0, sizeof t->cyc[c]);
         memset(t->cc_cyc[c], 0, sizeof t->cc_cyc[c]);
         t->cadd[c] = t->cdel[c] = 0;
+        for (int i = 0; i < E1_SEDITS; i++) if (t->sed_step[i] && t->sed_cyc[i] == c + 1) sed_free(t, i);
         return 1;
     }
     if (strcmp(key, "copycycle") == 0) {
@@ -1821,13 +1913,29 @@ static int set_track(e1_engine_t *e, int ti, const char *key, const char *val, i
         memcpy(t->cyc[b], t->cyc[a], sizeof t->cyc[a]);
         memcpy(t->cc_cyc[b], t->cc_cyc[a], sizeof t->cc_cyc[a]);
         t->cadd[b] = t->cadd[a]; t->cdel[b] = t->cdel[a];
+        if (a != b) {                            /* the steps edited in cycle A, as far as rows allow */
+            for (int i = 0; i < E1_SEDITS; i++) if (t->sed_step[i] && t->sed_cyc[i] == b + 1) sed_free(t, i);
+            for (int i = 0; i < E1_SEDITS; i++) {
+                if (!t->sed_step[i] || t->sed_cyc[i] != a + 1) continue;
+                int r = sed_get(t, t->sed_step[i] - 1, b);
+                if (r < 0) break;
+                t->sed_has[r] = t->sed_has[i];
+                memcpy(t->sed[r], t->sed[i], sizeof t->sed[i]);
+                memcpy(t->sed_cc[r], t->sed_cc[i], sizeof t->sed_cc[i]);
+            }
+        }
         return 1;
     }
     if (strcmp(key, "clearparam") == 0) {
-        if ((lane = parse_lane(val, "cc")) >= 0) { for (int c = 0; c < E1_CYCLES; c++) t->cc_cyc[c][lane] = 0; t->cc_rnd[lane] = 0; return 1; }
+        if ((lane = parse_lane(val, "cc")) >= 0) {
+            for (int c = 0; c < E1_CYCLES; c++) t->cc_cyc[c][lane] = 0;
+            for (int i = 0; i < E1_SEDITS; i++) t->sed_cc[i][lane] = -1;
+            t->cc_rnd[lane] = 0;
+            return 1;
+        }
         if ((p = find_param(val)) < 0) return 0;
         for (int c = 0; c < E1_CYCLES; c++) t->cyc[c][p] = 0;
-        for (int i = 0; i < E1_SEDITS; i++) t->sed[i][p] = 0;
+        for (int i = 0; i < E1_SEDITS; i++) { t->sed[i][p] = 0; t->sed_has[i] &= ~(1ULL << p); }
         t->rnd[p] = 0;
         return 1;
     }
@@ -1845,15 +1953,20 @@ static int set_track(e1_engine_t *e, int ti, const char *key, const char *val, i
     const pdesc_t *d = &P[p];
     int v;
     if (!raw && t->step_mask && (d->flags & F_STEP)) {
+        /* Picked steps: every cycle, or only the edited cycles while cycle edit is on. */
         int ok = 0;
         for (int st = 0; st < 64; st++) {
             if (!(t->step_mask & (1ULL << st))) continue;
-            int r = sed_get(t, st);
-            if (r < 0) continue;                 /* every row is taken */
-            int cur = clampi(t->v[p] + t->sed[r][p], d->lo, d->hi);
-            if (!parse_value(val, cur, d->lo, d->hi, d->names, &v)) return 0;
-            t->sed[r][p] = (int16_t)(v - t->v[p]);
-            ok = 1;
+            for (int c = em ? 0 : -1; c < (em ? E1_CYCLES : 0); c++) {
+                if (c >= 0 && !(em & (1u << c))) continue;
+                int r = sed_get(t, st, c);
+                if (r < 0) continue;             /* every row is taken */
+                int cur = stored_val(t, p, c, st);
+                if (!parse_value(val, cur, d->lo, d->hi, d->names, &v)) return 0;
+                t->sed[r][p] = (int16_t)(v - t->v[p]);
+                t->sed_has[r] |= 1ULL << p;
+                ok = 1;
+            }
         }
         return ok;
     }
@@ -1916,12 +2029,22 @@ static int shown(const e1_engine_t *e, int ti, int p)
     const e1_track_t *t = &e->t[ti];
     int c = t->edit_mask ? lowest_bit(t->edit_mask) : -1;
     int v = t->v[p];
-    if (t->step_mask && (P[p].flags & F_STEP)) {
-        int st = 0; while (st < 63 && !(t->step_mask & (1ULL << st))) st++;
-        int r = sed_find(t, st);
-        if (r >= 0) v += t->sed[r][p];
-    } else if (c >= 0 && (P[p].flags & F_CYC)) v += t->cyc[c][p];
+    if (t->step_mask && (P[p].flags & F_STEP)) return stored_val(t, p, c, first_step(t->step_mask));
+    if (c >= 0 && (P[p].flags & F_CYC)) v += t->cyc[c][p];
     return clampi(v, P[p].lo, P[p].hi);
+}
+
+int e1_cc_shown(const e1_engine_t *e, int track, int lane)
+{
+    if (track < 0 || track >= E1_TRACKS || lane < 0 || lane >= E1_CC_LANES) return -1;
+    const e1_track_t *t = &e->t[track];
+    int c = t->edit_mask ? lowest_bit(t->edit_mask) : -1;
+    int v = t->cc_val[lane];
+    if (v < 0) return -1;
+    int sv = t->step_mask ? step_cc(t, lane, c, first_step(t->step_mask)) : -1;
+    if (sv >= 0) return sv;
+    if (c >= 0) v += t->cc_cyc[c][lane];
+    return clampi(v, 0, 127);
 }
 
 int e1_get_num(const e1_engine_t *e, int track, int i)
@@ -1949,12 +2072,7 @@ int e1_get(const e1_engine_t *e, int track, const char *key, char *buf, int len)
         if ((p = find_param(key + 2)) >= 0) return snprintf(buf, (size_t)len, "%d", t->rnd[p]);
         return -1;
     }
-    if ((lane = parse_lane(key, "cc")) >= 0) {
-        int c = t->edit_mask ? lowest_bit(t->edit_mask) : -1;
-        int v = t->cc_val[lane];
-        if (v >= 0 && c >= 0) v = clampi(v + t->cc_cyc[c][lane], 0, 127);
-        return snprintf(buf, (size_t)len, "%d", v);
-    }
+    if ((lane = parse_lane(key, "cc")) >= 0) return snprintf(buf, (size_t)len, "%d", e1_cc_shown(e, track, lane));
     if ((lane = parse_lane(key, "ccn")) >= 0) return snprintf(buf, (size_t)len, "%d", t->cc_num[lane]);
     if (strcmp(key, "name") == 0) return snprintf(buf, (size_t)len, "%s", t->name);
     if (strcmp(key, "retrig") == 0) return snprintf(buf, (size_t)len, "%llx", (unsigned long long)t->retrig);
@@ -2022,8 +2140,13 @@ int e1_dump_track(const e1_engine_t *e, int track, char *buf, int len)
     }
     for (int i = 0; i < E1_SEDITS; i++) {
         if (!t->sed_step[i]) continue;
+        char sk[12];
+        if (t->sed_cyc[i]) snprintf(sk, sizeof sk, "s%dc%d", t->sed_step[i], t->sed_cyc[i]);
+        else snprintf(sk, sizeof sk, "s%d", t->sed_step[i]);
         for (int p = 0; p < E1_NP; p++)
-            if (t->sed[i][p]) pos = appendf(buf, len, pos, "s%d.%s=%d\n", t->sed_step[i], P[p].key, t->sed[i][p]);
+            if (t->sed_has[i] >> p & 1) pos = appendf(buf, len, pos, "%s.%s=%d\n", sk, P[p].key, t->sed[i][p]);
+        for (int l = 0; l < E1_CC_LANES; l++)
+            if (t->sed_cc[i][l] >= 0) pos = appendf(buf, len, pos, "%s.cc%d=%d\n", sk, l + 1, t->sed_cc[i][l]);
     }
     for (int c = 0; c < E1_CYCLES; c++) {
         for (int p = 0; p < E1_NP; p++)

@@ -34,7 +34,7 @@ import {
     padModel, padMode, padPages, padToTrack, padToSlot, trackName, AUTOS, SONG, songLabel, SOURCES,
     knobLeds, drawSelection, drawValueList, selectedKnob, drawCycleStrip,
 } from "./e1_view.mjs";
-import { createLibrary, createMenu, starterSet } from "./e1_library.mjs";
+import { createLibrary, createMenu, starterSet, cleanChain, chainLines, chainNext } from "./e1_library.mjs";
 
 const LIB = { PAGE_KNOBS, buildMetaIndex };
 
@@ -70,6 +70,7 @@ const st = {
     perfHeld: new Array(16).fill(false), latched: new Array(16).fill(false), perfMask: new Array(16).fill(0),
     soloMask: 0,
     patterns: new Array(16).fill(null), current: -1, queued: -1,
+    chain: [], chainPos: -1, chainNextPos: -1, patDown: [],
     setId: null, setName: "Set 1", dirty: false,
     copySrc: -1, copyPat: -1, copyCyc: -1,
 };
@@ -110,7 +111,8 @@ function poll() {
     if (fl) for (let t = 0; t < 16; t++) if ((fl >> t) & 1) st.flashUntil[t] = st.now + 90;
     if (st.queued >= 0 && !(snap.q | 0)) {          /* the queued pattern landed */
         st.current = st.queued; st.queued = -1; sessionDirty = true; edited();
-    }
+        if (st.chain.length >= 2 && st.chainNextPos >= 0) { st.chainPos = st.chainNextPos; chainQueueNext(); }
+    } else if (st.chain.length >= 2 && st.chainPos >= 0 && st.queued < 0 && !(snap.q | 0)) chainQueueNext();   /* a loaded chain */
     if ((snap.wr | 0) !== lastWebRev) { if (lastWebRev >= 0) edited(); lastWebRev = snap.wr | 0; }
     if (snap.wq | 0) takeWebRequests();
     dirty = true;
@@ -523,6 +525,7 @@ function saveSession() {
     if (typeof host_ensure_dir === "function") host_ensure_dir(SAVE_DIR);
     host_write_file(SESSION_FILE, JSON.stringify({
         v: 3, setId: st.setId, setName: st.setName, dirty: st.dirty, current: st.current, patterns: st.patterns,
+        chain: st.chain,
     }));
 }
 
@@ -535,6 +538,7 @@ function loadSession() {
         if (!o || o.v !== 3) return;
         if (Array.isArray(o.patterns)) for (let i = 0; i < 16; i++) st.patterns[i] = o.patterns[i] || null;
         if (typeof o.current === "number") st.current = o.current;
+        setChain(cleanChain(o.chain), st.current);
         if (o.setName) st.setName = String(o.setName);
         st.setId = o.setId || null;
         st.dirty = !!o.dirty;
@@ -554,6 +558,7 @@ function savePattern(i) {
 function recallPattern(i) {
     const p = st.patterns[i];
     if (!p) { toast("EMPTY", "SHIFT+PAD SAVES"); return; }
+    if (st.chain.length) { st.chain = []; st.chainPos = st.chainNextPos = -1; sessionDirty = true; st.dirty = true; }
     const running = st.snap && st.snap.r;
     const now = !running || st.queued === i;      /* a second tap while it waits = switch now */
     checkpoint();
@@ -562,8 +567,48 @@ function recallPattern(i) {
     else { st.queued = i; toast("NEXT", patternLabel(i)); }
 }
 
+/* Pattern chain: hold a pattern pad and tap more in order. The chain plays
+ * each pattern for its length, then the next, and loops; a single tap ends it. */
+function chainLabel() { return st.chain.map((c) => "P" + (c + 1)).join(">"); }
+
+function setChain(chain, current) {
+    st.chain = chain;
+    st.chainPos = chain.length ? Math.max(0, chain.indexOf(current)) : -1;
+    st.chainNextPos = -1;
+}
+
+/* Stage the chain's next pattern to land when the playing one has had its length. */
+function chainQueueNext() {
+    if (st.chain.length < 2 || st.chainPos < 0) return;
+    const nx = chainNext(st.chain, st.chainPos, st.patterns);
+    const cur = st.patterns[st.chain[st.chainPos]];
+    if (!nx || !cur) return;
+    stageAll(st.patterns[nx.slot].tracks, "after " + chainLines(cur.tracks, st.snap ? st.snap.qn : 2));
+    st.queued = nx.slot; st.chainNextPos = nx.pos;
+    dirty = true;
+}
+
+/* A pattern pad pressed while another is still held adds to the chain. */
+function chainPress(i) {
+    if (!st.patterns[i]) return;
+    const first = st.patDown[0];
+    if (st.chain.length === 0) {
+        if (first === undefined || !st.patterns[first]) return;
+        st.chain = [first];
+        st.chainPos = -1;
+        st.chainNextPos = st.queued === first ? 0 : -1;   /* the first is still on its way */
+        if (st.current === first && st.queued < 0) st.chainPos = 0;
+    }
+    if (st.chain.length >= 16) return;
+    st.chain.push(i);
+    st.dirty = true; sessionDirty = true;
+    if (st.chainPos >= 0 && st.queued < 0) chainQueueNext();   /* the first already plays: queue the second */
+    toast("CHAIN", chainLabel());
+}
+
 function patternPress(i) {
     if (st.saveMode) { st.saveMode = false; savePattern(i); return; }
+    if (st.patDown.length > 1 && !st.delHeld && !st.copyHeld && !st.shift) { chainPress(i); return; }
     if (st.delHeld) {
         if (!st.patterns[i]) return;
         st.patterns[i] = null;
@@ -694,7 +739,8 @@ function onStep(idx, on) {
     }
     if (st.delHeld) {
         const bit = 1n << BigInt(idx);
-        if ((big(st.snap && st.snap.se) | stepMask()) & bit) {
+        if ((big(st.snap && st.snap.se) | big(st.snap && st.snap.sc) | stepMask()) & bit) {
+            /* In cycle edit this clears the step's values for that cycle and for every cycle. */
             checkpoint(); setP(f + "clearstep", idx + 1);
             if (stepMask() & bit) setP(f + "stepedit", (stepMask() & ~bit).toString(16));
             toast("CLEAR", "STEP " + (idx + 1)); edited(); return;
@@ -732,8 +778,13 @@ function onSlot(i, on, vel) {
     /* A note heard from this pad ends on release, whatever the pads show by then. */
     if (!on && audNotes[i]) { setP("aud:" + audNotes[i].t, audNotes[i].n + " 0"); delete audNotes[i]; }
     layerPadUsed = true;
+    if (mode !== "pattern") st.patDown = [];
     if (mode === "perform") { perfPress(i, on); return; }
     if (mode === "cycles") { cyclePress(i, on); return; }
+    if (mode === "pattern") {
+        if (!on) { st.patDown = st.patDown.filter((x) => x !== i); return; }
+        if (!st.patDown.includes(i)) st.patDown.push(i);
+    }
     if (!on) return;
     if (mode === "pattern") { patternPress(i); return; }
     const act = padModel(st).pads[i].act;
@@ -1016,6 +1067,7 @@ function setObject() {
         trackNames: st.snap && st.snap.nm ? st.snap.nm.slice() : [],
         current: st.current,
         patterns: st.patterns,
+        chain: st.chain,
     };
 }
 
@@ -1023,6 +1075,7 @@ function applySet(id, set) {
     for (let i = 0; i < 16; i++) st.patterns[i] = set.patterns[i] || null;
     st.current = typeof set.current === "number" ? set.current : -1;
     st.queued = -1;
+    setChain(cleanChain(set.chain), st.current);
     st.setId = id; st.setName = set.name;
     let extra = null;
     try { extra = JSON.parse(set.globals || "null"); } catch (e) { extra = null; }
@@ -1066,7 +1119,7 @@ const host = {
             lib.setLast(st.setId); st.dirty = false; sessionDirty = true;
             break;
         case "set.new":
-            st.patterns.fill(null); st.current = -1; st.queued = -1;
+            st.patterns.fill(null); st.current = -1; st.queued = -1; setChain([], -1);
             st.setName = a.name;
             st.setId = lib.createSet(a.name, setObject());
             lib.setLast(st.setId); st.dirty = false; sessionDirty = true;

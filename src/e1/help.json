@@ -54,11 +54,14 @@
         "White: sounding,",
         " current value.",
         "Blue: triplets,",
-        " patterns.",
+        " patterns. Bright:",
+        " chained.",
         "Green: bars,",
         " styles, grooves.",
         "Pink: modifiers.",
-        "Red: edited."
+        "Red: edited.",
+        "Yellow step: edited",
+        " in this cycle."
       ]
     },
     {
@@ -88,6 +91,14 @@
         " own values.",
         "Hold Shift: see all",
         " edited steps.",
+        "In cycle edit: the",
+        " step's values are",
+        " for that cycle.",
+        "Yellow: its own",
+        " values in this",
+        " cycle.",
+        "CC track: CC lanes",
+        " per step too.",
         "Random+step: mark a",
         " retrigger step.",
         " Random, groove,",
@@ -99,8 +110,10 @@
         " 17-64.",
         "Shift+Left/Right:",
         " rotate.",
-        "Delete+step: clear",
-        " hand edits."
+        "Delete+red step:",
+        " clear its values.",
+        "Delete+other step:",
+        " clear hand edits."
       ]
     },
     {
@@ -148,6 +161,13 @@
         " on the quantize",
         " line.",
         "Tap again: now.",
+        "Chain: hold a pad,",
+        " tap more in order.",
+        " Each plays for its",
+        " Length, then the",
+        " next. Loops.",
+        "One tap: no chain.",
+        "Bright blue: chain.",
         "Copy+pad+pad: copy.",
         "Delete+pad: clear."
       ]
@@ -169,7 +189,10 @@
         "Shift+pad: number",
         " of cycles.",
         "Delete+pad: clear",
-        " its edits."
+        " its edits.",
+        "Shift+step in edit:",
+        " step values for",
+        " that cycle only."
       ]
     },
     {

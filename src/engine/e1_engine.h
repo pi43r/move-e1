@@ -37,7 +37,8 @@ extern "C" {
 #define E1_VOICES        12     /* sounding notes tracked per track */
 #define E1_CHAINS        3      /* repeat chains in flight per track */
 #define E1_NAME_LEN      13
-#define E1_SEDITS        16     /* steps per track that can carry their own values */
+#define E1_SEDITS        32     /* step rows per track: a step's values for every cycle take
+                                   one row, its values in one cycle take one row per cycle */
 #define E1_PPQN          96
 #define E1_TICKS_PER_BAR (E1_PPQN * 4)
 #define E1_REPEATS_INF   49     /* Repeats value that means "until the next pulse" */
@@ -123,7 +124,10 @@ typedef struct {
     int16_t  cyc[E1_CYCLES][E1_NP];            /* per-cycle offsets, 0 = no edit */
     int8_t   rnd[E1_NP];                       /* random amount, -100..100 */
     uint8_t  sed_step[E1_SEDITS];              /* step + 1 of each edited step, 0 = free */
-    int16_t  sed[E1_SEDITS][E1_NP];            /* per-step offsets */
+    uint8_t  sed_cyc[E1_SEDITS];               /* cycle + 1 for a row that holds one cycle, 0 = every cycle */
+    uint64_t sed_has[E1_SEDITS];               /* bit p: the row sets parameter p */
+    int16_t  sed[E1_SEDITS][E1_NP];            /* per-step offsets from base */
+    int16_t  sed_cc[E1_SEDITS][E1_CC_LANES];   /* per-step CC lane values, -1 = not set */
     uint64_t add_mask, del_mask;               /* hand edits, all cycles */
     uint64_t cadd[E1_CYCLES], cdel[E1_CYCLES]; /* hand edits in one cycle */
     uint64_t retrig;                           /* steps that restart random, groove, phrase and style */
@@ -227,7 +231,11 @@ int  e1_steps(const e1_engine_t *e, int track, int cycle);
 int  e1_display_cycle(const e1_track_t *t);
 /* Bit c set when cycle c differs from the base. */
 uint32_t e1_cycles_edited(const e1_track_t *t);
-uint64_t e1_steps_edited(const e1_track_t *t);   /* steps that carry their own values */
+/* Steps that carry their own values for every cycle (cycle -1), or in cycle c only. */
+uint64_t e1_steps_edited(const e1_track_t *t);
+uint64_t e1_steps_edited_in(const e1_track_t *t, int cycle);
+/* A CC lane's value as the UI shows it: the picked step's, the edited cycle's, else base. */
+int  e1_cc_shown(const e1_engine_t *e, int track, int lane);
 
 int  e1_ports(const e1_engine_t *e, const e1_track_t *t);
 /* The chord the chord track plays now, ascending MIDI notes in out[E1_POOL].
@@ -244,6 +252,14 @@ uint32_t e1_followers(const e1_engine_t *e);
  *   <param>          base value, or the picked cycles while edit_mask is set
  *   r.<param>        random amount (-100..100)
  *   c<N>.<param>     cycle N's offset from base (used by save files)
+ *   s<N>.<param>     step N's offset in every cycle; s<N>c<M>.<param> in cycle M only
+ *   s<N>.cc<L>       step N's value of CC lane L; s<N>c<M>.cc<L> in cycle M only
+ *   stepedit         hex mask of picked steps: <param> and cc<L> then write step rows,
+ *                    for the edited cycles only while cycle edit is on
+ *   clearstep        N: step N's rows (in cycle edit: its every-cycle row and the
+ *                    edited cycles' rows); 0 = every step
+ * A step's value: its row for the cycle, else its every-cycle row, else the
+ * cycle's offset, else base.
  *   cc<L>, ccn<L>    CC lane value (-1 off) and CC number; r.cc<L>, c<N>.cc<L>
  *   pool             comma list of MIDI notes; pooltoggle = one note
  *   toggle           flip a step by hand; clearedits; addmask/delmask (hex)

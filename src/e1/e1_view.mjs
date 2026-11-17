@@ -283,7 +283,7 @@ export function displayFor(key, raw, v) {
  *   orange     the selected note track, pulses, amounts, notes in the pool
  *   cyan       the selected CC track and its pulses
  *   grey       there but idle; near black: muted, empty, unused
- *   blue       triplets, black keys, patterns with content
+ *   blue       triplets, black keys, patterns with content; bright blue: chained
  *   green      bars (Length, Quantize), cadences; dark green: styles, grooves
  *   pink       modifier pads at the right end of each row
  *   red        something edited in one cycle
@@ -375,6 +375,7 @@ export function padModel(st) {
         for (let i = 0; i < 16; i++) {
             const filled = st.patterns && st.patterns[i];
             let c = filled ? COL.blue : COL.dim;
+            if (filled && st.chain && st.chain.includes(i)) c = COL.brightBlue;   /* in the chain */
             if (st.current === i) c = COL.white;
             if (st.queued === i) c = blink ? COL.white : COL.blue;
             pads[i] = { c, act: { k: "pattern", i } };
@@ -640,10 +641,11 @@ export function ledFrame(st) {
     let hits = 0n;
     try { hits = BigInt("0x" + (s.h || "0")); } catch (e) { hits = 0n; }
     const cur = s.st ? s.st[st.focus] : -1;
-    let sm = 0n, se = 0n, rt = 0n, lv = hits;
-    try { sm = BigInt("0x" + (s.sm || "0")); se = BigInt("0x" + (s.se || "0")); rt = BigInt("0x" + (s.rt || "0")); } catch (e) { sm = se = rt = 0n; }
+    let sm = 0n, se = 0n, sc = 0n, rt = 0n, lv = hits;
+    try { sm = BigInt("0x" + (s.sm || "0")); se = BigInt("0x" + (s.se || "0")); sc = BigInt("0x" + (s.sc || "0")); rt = BigInt("0x" + (s.rt || "0")); } catch (e) { sm = se = sc = rt = 0n; }
     try { if (s.lv !== undefined) lv = BigInt("0x" + (s.lv || "0")); } catch (e) { lv = hits; }
     /* Shift shows every step that carries its own values, hit or not.
+     * In cycle edit, yellow marks steps with values for this cycle only.
      * Random or Delete held shows the retrigger steps. */
     const showRt = st.randomHeld || st.delHeld;
     for (let i = 0; i < 16; i++) {
@@ -657,6 +659,7 @@ export function ledFrame(st) {
             if (own && on && !thin) c = COL.red;                        /* carries its own values */
             if (s.r && idx === cur) c = on && !thin ? COL.white : COL.lightGrey;
             if (own && st.shift) c = COL.red;
+            if ((sc >> BigInt(idx)) & 1n) c = COL.yellow;               /* its own values in this cycle (cycle edit) */
             if (showRt && ((rt >> BigInt(idx)) & 1n)) c = COL.pink;
             if ((sm >> BigInt(idx)) & 1n) c = COL.white;                /* picked for step edit */
             if (st.fzOn) c = idx < (st.fzLen | 0) ? COL.brightBlue : COL.dim;   /* freeze length */
@@ -720,7 +723,9 @@ export function footerFor(st) {
         const ids = []; let m = 0n;
         try { m = BigInt("0x" + s.sm); } catch (e) { m = 0n; }
         for (let i = 0; i < 64; i++) if ((m >> BigInt(i)) & 1n) ids.push(i + 1);
-        out.push(["STEP", cut(ids.join("+"), 12)]);
+        /* In cycle edit the step's values are for that cycle only. */
+        const cyc = []; for (let c = 0; c < 16; c++) if (((s.em | 0) >> c) & 1) cyc.push(c + 1);
+        out.push(["STEP", cut(ids.join("+"), cyc.length ? 6 : 12) + (cyc.length ? " C" + cut(cyc.join("+"), 5) : "")]);
         return out;
     }
     /* Pitch keyboard: the octave on the pads and the pool notes in it. */
@@ -793,6 +798,7 @@ function drawGrid(ctx, st, head, right, cells, hint) {
         if (c.on) ctx.fillRect(x, y, 31, 10, 1);
         else if (c.box) { ctx.fillRect(x, y, 31, 1, 1); ctx.fillRect(x, y + 9, 31, 1, 1); ctx.fillRect(x, y, 1, 10, 1); ctx.fillRect(x + 30, y, 1, 10, 1); }
         ctx.print(x + 2, y + 2, cut(c.txt, 5), c.on ? 0 : 1);
+        if (c.mark) ctx.fillRect(x + 28, y + 3, 2, 4, c.on ? 0 : 1);   /* chained */
     }
     const foot = st.toast && st.toast.until > now ? st.toast.tag + " " + st.toast.text : hint;
     ctx.print(1, 56, cut(foot, 21), 1);
@@ -807,10 +813,12 @@ export function drawLayer(ctx, st) {
     if (st.layer === "pattern" || st.saveMode) {
         const cells = Array.from({ length: 16 }, (_, i) => {
             const p = st.patterns && st.patterns[i];
-            return { txt: p ? (p.name || "P" + (i + 1)).toUpperCase() : "-", on: st.current === i, box: st.queued === i && blink };
+            return { txt: p ? (p.name || "P" + (i + 1)).toUpperCase() : "-", on: st.current === i, box: st.queued === i && blink,
+                mark: !!(p && st.chain && st.chain.length >= 2 && st.chain.includes(i)) };
         });
+        const chain = st.chain && st.chain.length >= 2 ? "CHAIN " + st.chain.map((c) => c + 1).join(">") : "";
         drawGrid(ctx, st, "PATTERNS", cut((st.setName || "").toUpperCase(), 11), cells,
-            st.saveMode ? "TAP A SLOT TO SAVE" : (st.shift ? "TAP SAVES HERE" : "TAP A SLOT TO PLAY"));
+            st.saveMode ? "TAP A SLOT TO SAVE" : (st.shift ? "TAP SAVES HERE" : (chain ? cut(chain, 21) : "TAP A SLOT TO PLAY")));
         return true;
     }
     if (st.layer === "perform") {

@@ -59,7 +59,9 @@ typedef struct {
      * live engine on the next bar (or at once when stopped). */
     e1_engine_t stage;
     uint32_t stage_mask;
-    int commit;                   /* 0 none, 1 on the quantize line, 2 now */
+    int commit;                   /* 0 none, 1 on the quantize line, 2 now, 3 after commit_n lines */
+    int commit_n, commit_left;    /* mode 3: quantize lines to cross, and how many are still to come */
+    int was_running;
     int quant;                    /* index into QUANT_TICKS */
 
     /* Temp: saved fields of every track while the Temp button is held */
@@ -216,6 +218,24 @@ static void apply_stage(e1_inst_t *s)
 static void advance_to(e1_inst_t *s, double tick_now)
 {
     if (s->commit == 2 || (s->commit == 1 && !s->e.running)) apply_stage(s);
+    /* Mode 3 (a pattern chain): counts quantize lines while playing, and
+     * starts its count again when the transport stops. */
+    if (s->commit == 3 && !s->e.running && s->was_running) s->commit_left = s->commit_n;
+    s->was_running = s->e.running;
+    if (s->commit == 3 && s->e.running) {
+        double q = (double)QUANT_TICKS[s->quant], pos = s->e.tick;
+        for (;;) {
+            double line = (floor((pos - s->e.origin) / q + 1e-9) + 1.0) * q + s->e.origin;
+            if (tick_now < line) break;
+            if (s->commit_left <= 1) {
+                e1_advance(&s->e, line - 1e-6, emit, s);
+                apply_stage(s);
+                break;
+            }
+            s->commit_left--;
+            pos = line;
+        }
+    }
     if (s->commit == 1 && s->e.running) {
         double q = (double)QUANT_TICKS[s->quant];
         double line = (floor((s->e.tick - s->e.origin) / q + 1e-9) + 1.0) * q + s->e.origin;
@@ -469,6 +489,13 @@ static void e1_set_param(void *inst, const char *key, const char *val)
         return;
     }
     if (strcmp(key, "commit") == 0) {
+        /* "after N": on the Nth quantize line from here (a pattern chain) */
+        if (strncmp(val, "after ", 6) == 0) {
+            int n = atoi(val + 6);
+            s->commit_n = s->commit_left = n < 1 ? 1 : (n > 256 ? 256 : n);
+            s->commit = 3;
+            return;
+        }
         s->commit = strcmp(val, "now") == 0 ? 2 : (strcmp(val, "cancel") == 0 ? 0 : 1);
         if (!s->commit) s->stage_mask = 0;
         return;
@@ -516,6 +543,7 @@ static int json_ui(e1_inst_t *s, char *buf, int len)
     PUT("{\"r\":%d,\"ck\":%d,\"bpm\":%.1f,\"d\":%d,\"co\":%d,\"qn\":%d,\"f\":%d,\"fl\":%u,\"mu\":%u,\"ty\":%u,\"dr\":%u,",
         s->e.running, s->clock, (double)s->bpm, s->e.dest, s->clock_out, s->quant, s->focus + 1,
         (unsigned)flash, (unsigned)mute, (unsigned)type, (unsigned)(s->q_move.dropped + s->q_comp.dropped));
+    PUT("\"ql\":%d,", s->commit == 3 ? s->commit_left : 0);
     PUT("\"pf\":%u,\"tmp\":%d,\"q\":%d,\"wq\":%d,\"wr\":%u,", (unsigned)pf, s->temp_on, s->commit, s->wq_n, (unsigned)s->web_rev);
     PUT("\"rp\":%u,\"rt\":\"%llx\",", (unsigned)rp, (unsigned long long)f->retrig);
     PUT("\"dc\":%d,\"dm\":%d,\"dh\":%d,\"lv\":\"%llx\",", e1_dice_rolled(f), e1_dice_active(&s->e, s->focus), f->dhist_n,
@@ -527,7 +555,8 @@ static int json_ui(e1_inst_t *s, char *buf, int len)
     for (int i = 0; i < E1_TRACKS; i++) PUT("%s%d", i ? "," : "", s->e.t[i].cur_step);
     PUT("],\"nm\":[");
     for (int i = 0; i < E1_TRACKS; i++) PUT("%s\"%s\"", i ? "," : "", s->e.t[i].name);
-    PUT("],\"sm\":\"%llx\",\"se\":\"%llx\"", (unsigned long long)f->step_mask, (unsigned long long)e1_steps_edited(f));
+    PUT("],\"sm\":\"%llx\",\"se\":\"%llx\",\"sc\":\"%llx\"", (unsigned long long)f->step_mask, (unsigned long long)e1_steps_edited(f),
+        (unsigned long long)(f->edit_mask ? e1_steps_edited_in(f, dc) : 0));
     PUT(",\"h\":\"%llx\",\"p\":[", (unsigned long long)e1_hit_mask(&s->e, s->focus, f->edit_mask || s->e.running ? dc : -1, f->p_fill));
     for (int i = 0; i < E1_NP; i++) PUT("%s%d", i ? "," : "", e1_get_num(&s->e, s->focus, i));
     PUT("],\"rn\":[");
@@ -535,11 +564,7 @@ static int json_ui(e1_inst_t *s, char *buf, int len)
     PUT("],\"po\":[");
     for (int i = 0; i < f->pool_n; i++) PUT("%s%d", i ? "," : "", f->pool[i]);
     PUT("],\"cv\":[");
-    for (int i = 0; i < E1_CC_LANES; i++) {
-        int v = f->cc_val[i];
-        if (v >= 0 && f->edit_mask) { v += f->cc_cyc[dc][i]; v = v < 0 ? 0 : (v > 127 ? 127 : v); }
-        PUT("%s%d", i ? "," : "", v);
-    }
+    for (int i = 0; i < E1_CC_LANES; i++) PUT("%s%d", i ? "," : "", e1_cc_shown(&s->e, s->focus, i));
     PUT("],\"cn\":[");
     for (int i = 0; i < E1_CC_LANES; i++) PUT("%s%d", i ? "," : "", f->cc_num[i]);
     PUT("],\"cr\":[");

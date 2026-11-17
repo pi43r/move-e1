@@ -853,6 +853,101 @@ static void test_step_edit(void)
     free(e); free(c);
 }
 
+/* A step edited in one cycle: step in cycle, then step, then cycle, then base. */
+static void test_step_cycles(void)
+{
+    e1_engine_t *e = eng_new(); cap_t *c = cap_new();
+    setup(e); fresh(e, 0);
+    S(e, 0, "velocity", "60"); S(e, 0, "cycles", "2");          /* hits on steps 1 5 9 13 */
+    S(e, 0, "edit", "2"); S(e, 0, "velocity", "80"); S(e, 0, "edit", "0");      /* cycle 2: 80 */
+    S(e, 0, "stepedit", "110"); S(e, 0, "velocity", "100"); S(e, 0, "stepedit", "0");   /* steps 5, 9: 100 */
+    S(e, 0, "edit", "2"); S(e, 0, "stepedit", "10"); S(e, 0, "velocity", "120");        /* step 5 in cycle 2: 120 */
+    char b[32]; e1_get(e, 0, "velocity", b, sizeof b);
+    CHECK(strcmp(b, "120") == 0);
+    CHECK(e1_steps_edited_in(&e->t[0], 1) == 0x10 && e1_steps_edited(&e->t[0]) == 0x110);
+    S(e, 0, "stepedit", "100");                                 /* step 9 in cycle 2 shows its every-cycle value */
+    e1_get(e, 0, "velocity", b, sizeof b);
+    CHECK(strcmp(b, "100") == 0);
+    S(e, 0, "stepedit", "0"); S(e, 0, "edit", "0");
+    e1_get(e, 0, "velocity", b, sizeof b);
+    CHECK(strcmp(b, "60") == 0);
+    e1_start(e, 0); run(e, c, 0, 2 * 384 - 1, 1);
+    non_t o[16]; int n = ons(c, 0, o, 16);
+    CHECK(n == 8);
+    CHECK(o[0].vel == 60 && o[1].vel == 100 && o[2].vel == 100 && o[3].vel == 60);
+    CHECK(o[4].vel == 80 && o[5].vel == 120 && o[6].vel == 100 && o[7].vel == 80);
+    /* the dump keeps both levels; an old-style dump still loads */
+    char d[8192]; e1_dump_track(e, 0, d, sizeof d);
+    CHECK(strstr(d, "s5c2.velocity=60") && strstr(d, "s5.velocity=40") && strstr(d, "s9.velocity=40"));
+    fresh(e, 0); e1_load_track(e, 0, d);
+    cap_clear(c); e1_start(e, 0); run(e, c, 0, 2 * 384 - 1, 1);
+    n = ons(c, 0, o, 16);
+    CHECK(n == 8 && o[5].vel == 120 && o[1].vel == 100 && o[4].vel == 80);
+    /* a step value equal to base still beats the cycle's */
+    S(e, 0, "stepedit", "1000"); S(e, 0, "velocity", "60"); S(e, 0, "stepedit", "0");
+    cap_clear(c); e1_start(e, 0); run(e, c, 0, 2 * 384 - 1, 1);
+    n = ons(c, 0, o, 16);
+    CHECK(n == 8 && o[7].vel == 60);
+    /* Delete in cycle 2's view clears step 5's row for cycle 2 and its every-cycle row */
+    S(e, 0, "edit", "2"); S(e, 0, "clearstep", "5"); S(e, 0, "edit", "0");
+    CHECK(e1_steps_edited_in(&e->t[0], 1) == 0 && e1_steps_edited(&e->t[0]) == 0x1100);
+    /* clearcycle drops the cycle's step rows too */
+    S(e, 0, "edit", "1"); S(e, 0, "stepedit", "1"); S(e, 0, "velocity", "9"); S(e, 0, "stepedit", "0"); S(e, 0, "edit", "0");
+    CHECK(e1_steps_edited_in(&e->t[0], 0) == 1);
+    S(e, 0, "copycycle", "1 3");
+    CHECK(e1_steps_edited_in(&e->t[0], 2) == 1);
+    S(e, 0, "clearcycle", "1");
+    CHECK(e1_steps_edited_in(&e->t[0], 0) == 0 && e1_steps_edited_in(&e->t[0], 2) == 1);
+    /* rows run out without harm */
+    fresh(e, 0); S(e, 0, "cycles", "16");
+    int got = 0;
+    for (int cy = 0; cy < 16; cy++) {
+        char k[16]; snprintf(k, sizeof k, "%x", 1 << cy);
+        S(e, 0, "edit", k); S(e, 0, "stepedit", "f"); e1_set(e, 0, "velocity", "5"); S(e, 0, "stepedit", "0");
+    }
+    S(e, 0, "edit", "0");
+    for (int cy = 0; cy < 16; cy++) got += popcount64(e1_steps_edited_in(&e->t[0], cy)) ;
+    CHECK(got == E1_SEDITS);
+    free(e); free(c);
+}
+
+/* CC tracks: picked steps keep their own lane values, per cycle too. */
+static void test_cc_steps(void)
+{
+    e1_engine_t *e = eng_new(); cap_t *c = cap_new();
+    setup(e); fresh(e, 12);
+    S(e, 12, "type", "CC"); S(e, 12, "cc1", "64"); S(e, 12, "ccn1", "74"); S(e, 12, "cycles", "2");
+    S(e, 12, "stepedit", "10"); S(e, 12, "cc1", "100");
+    char b[16]; e1_get(e, 12, "cc1", b, sizeof b); CHECK(strcmp(b, "100") == 0);
+    S(e, 12, "edit", "2"); S(e, 12, "cc1", "20");
+    e1_get(e, 12, "cc1", b, sizeof b); CHECK(strcmp(b, "20") == 0);
+    S(e, 12, "stepedit", "0");
+    e1_get(e, 12, "cc1", b, sizeof b); CHECK(strcmp(b, "64") == 0);
+    S(e, 12, "edit", "0");
+    CHECK(e->t[12].cc_val[0] == 64 && e1_steps_edited(&e->t[12]) == 0x10 && e1_steps_edited_in(&e->t[12], 1) == 0x10);
+    g_now = 0; e1_advance(e, 0, emit, c); cap_clear(c);
+    e1_start(e, 0); run(e, c, 0, 2 * 384 - 1, 1);
+    CHECK(count_cc(c, 12, 74, 100) == 1 && count_cc(c, 12, 74, 20) == 1 && count_cc(c, 12, 74, 64) == 6);
+    /* Change: only the moves go out */
+    S(e, 12, "ccmode", "Change");
+    cap_clear(c); e1_start(e, 0); run(e, c, 0, 2 * 384 - 1, 1);
+    CHECK(count_cc(c, 12, 74, 100) == 1 && count_cc(c, 12, 74, 20) == 1 && count_cc(c, 12, 74, 64) == 2);
+    /* Glide: heads for the step's value */
+    S(e, 12, "ccmode", "Glide"); S(e, 12, "slew", "10");
+    cap_clear(c); e1_start(e, 0); run(e, c, 0, 2 * 384 - 1, 1);
+    int hi = 0, lo = 127;
+    for (int i = 0; i < c->n; i++) if (c->ev[i].d1 == 74) { if (c->ev[i].d2 > hi) hi = c->ev[i].d2; if (c->ev[i].d2 < lo) lo = c->ev[i].d2; }
+    CHECK(hi > 64 && lo < 64);
+    /* saved and loaded */
+    char d[8192]; e1_dump_track(e, 12, d, sizeof d);
+    CHECK(strstr(d, "s5.cc1=100") && strstr(d, "s5c2.cc1=20"));
+    fresh(e, 12); e1_load_track(e, 12, d);
+    CHECK(e1_steps_edited(&e->t[12]) == 0x10 && e1_steps_edited_in(&e->t[12], 1) == 0x10);
+    S(e, 12, "clearparam", "cc1");
+    CHECK(e1_steps_edited(&e->t[12]) == 0);
+    free(e); free(c);
+}
+
 static void test_velocity(void)
 {
     e1_engine_t *e = eng_new(); cap_t *c = cap_new();
@@ -1927,6 +2022,8 @@ int main(int argc, char **argv)
     test_repeats();
     test_velocity();
     test_step_edit();
+    test_step_cycles();
+    test_cc_steps();
     test_prob();
     test_random();
     test_cc();

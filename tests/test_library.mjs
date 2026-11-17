@@ -3,6 +3,7 @@
 import {
     starterSet, STARTER_NAMES,
     createLibrary, createMenu, cleanName, slugify, isSafeId, uniqueSetName, emptySet, normaliseSet, TOAST_MS,
+    cleanChain, patternBars, chainLines, chainNext,
 } from "../src/e1/e1_library.mjs";
 
 let pass = 0, fail = 0;
@@ -73,6 +74,32 @@ checkEq("uniqueSetName", uniqueSetName(["Set 1", "set 2"]), "Set 3");
     lib.setLast("nope");
     checkEq("setLast unknown -> null", lib.lastSetId(), null);
     check("loadSet unsafe id", lib.loadSet("../x") === null && lib.loadSet("missing") === null);
+}
+
+/* ------------------------------------------------- pattern chains */
+{
+    const { lib } = fresh();
+    const s = emptySet("Chained");
+    s.chain = [2, 0, 5];
+    const id = lib.createSet("Chained", s);
+    checkEq("chain round trip", lib.loadSet(id).chain, [2, 0, 5]);
+    checkEq("old set: no chain", normaliseSet({ name: "Old", patterns: [] }).chain, []);
+    checkEq("chain cleaned", cleanChain([1, "x", 99, 3, -1, 2.5, 4]), [1, 3, 4]);
+    checkEq("one slot is no chain", cleanChain([3]), []);
+    checkEq("chain capped", cleanChain(Array.from({ length: 40 }, (_, i) => i % 16)).length, 16);
+    const tr = (len, loop) => Array.from({ length: 16 }, (_, t) => (t === 3 ? "length=" + len + "\nloop=" + loop : "length=Off\nloop=Free"));
+    checkEq("bars from Length", patternBars(tr(4, 2)), 4);
+    checkEq("bars from Loop", patternBars(tr("Off", 8)), 8);
+    checkEq("bars unknown", patternBars(tr("Off", "Free")), 0);
+    checkEq("lines: unknown = 1 bar at 1/4", chainLines(tr("Off", "Free"), 0), 4);
+    checkEq("lines: 4 bars at 1 bar", chainLines(tr(4, "Free"), 2), 4);
+    checkEq("lines: 3 bars at 2 bars", chainLines(tr(3, "Free"), 3), 2);
+    checkEq("lines: 1 bar at 8 bars", chainLines(tr(1, "Free"), 5), 1);
+    const pats = [{}, null, {}, {}];
+    checkEq("chain steps", chainNext([0, 2, 3], 0, pats), { pos: 1, slot: 2 });
+    checkEq("chain loops", chainNext([0, 2, 3], 2, pats), { pos: 0, slot: 0 });
+    checkEq("chain skips empty", chainNext([0, 1, 3], 0, pats), { pos: 2, slot: 3 });
+    checkEq("chain all empty", chainNext([1, 1], 0, pats), null);
 }
 
 /* ------------------------------------------- unique ids and names */

@@ -80,7 +80,52 @@ export function emptySet(name) {
         trackNames: Array.from({ length: TRACKS }, () => ""),
         current: -1,
         patterns: Array.from({ length: SLOTS }, () => null),
+        chain: [],
     };
+}
+
+/* A pattern chain: slot numbers 0..15 in play order, at most CHAIN_MAX. */
+export const CHAIN_MAX = 16;
+export function cleanChain(raw) {
+    if (!Array.isArray(raw)) return [];
+    const out = [];
+    for (const v of raw) {
+        const n = Number(v);
+        if (Number.isInteger(n) && n >= 0 && n < SLOTS && out.length < CHAIN_MAX) out.push(n);
+    }
+    return out.length >= 2 ? out : [];
+}
+
+/* How long a pattern plays in a chain, in bars: its longest Length, else its
+ * longest Loop, else 0 (not known). `tracks` are the pattern's track dumps. */
+export function patternBars(tracks) {
+    let len = 0, loop = 0;
+    for (const d of Array.isArray(tracks) ? tracks : []) {
+        const text = String(d || "");
+        const l = /^length=(\d+)$/m.exec(text), p = /^loop=(\d+)$/m.exec(text);
+        if (l) len = Math.max(len, Number(l[1]));
+        if (p) loop = Math.max(loop, Number(p[1]));
+    }
+    return len || loop;
+}
+
+/* Quantize lines a chained pattern plays for: its bars (1 when not known),
+ * rounded up to whole lines of the quantize setting (qn = its index). */
+export const QUANT_TICKS = [96, 192, 384, 768, 1536, 3072];
+export function chainLines(tracks, qn) {
+    const q = QUANT_TICKS[Math.max(0, Math.min(QUANT_TICKS.length - 1, qn | 0))];
+    const bars = patternBars(tracks) || 1;
+    return Math.max(1, Math.ceil(bars * 384 / q));
+}
+
+/* The chain entry after position `pos` whose slot holds a pattern, or null. */
+export function chainNext(chain, pos, patterns) {
+    const n = Array.isArray(chain) ? chain.length : 0;
+    for (let k = 1; k <= n; k++) {
+        const p = (((pos | 0) + k) % n + n) % n;
+        if (patterns && patterns[chain[p]]) return { pos: p, slot: chain[p] };
+    }
+    return null;
 }
 
 /* Accept anything a file might contain and return a complete set. */
@@ -102,6 +147,7 @@ export function normaliseSet(raw) {
     }
     const c = Number(src.current);
     set.current = Number.isInteger(c) && c >= 0 && c < SLOTS ? c : -1;
+    set.chain = cleanChain(src.chain);        /* sets from before chains: none */
     return set;
 }
 

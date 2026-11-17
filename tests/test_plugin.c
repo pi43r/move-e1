@@ -450,6 +450,30 @@ static void test_commit(void)
     /* a staged track replaces only that track, all of it */
     CHECK(strcmp(get(inst, "t1:steps"), "7") == 0);
     CHECK(strcmp(get(inst, "t2:pulses"), "4") == 0 && strcmp(get(inst, "t2:name"), "SNARE") == 0);
+
+    /* a chain step: "after N" lands on the Nth quantize line, waits while stopped */
+    set(inst, "quant", "1/2");
+    set(inst, "stage:1", "steps=11\n"); set(inst, "commit", "after 3");
+    render(inst, 50);
+    CHECK(S->commit == 3 && strcmp(get(inst, "t1:steps"), "7") == 0);
+    set(inst, "play", "1");
+    render(inst, 1);
+    double t0 = S->e.tick, applied = -1;
+    for (int i = 0; i < 20000 && applied < 0; i++) { render(inst, 1); if (!S->stage_mask) applied = S->e.tick; }
+    CHECKM(applied >= 3 * 192 && applied < 3 * 192 + 2, "chain step applied at %g (from %g)", applied, t0);
+    CHECK(S->commit == 0 && strcmp(get(inst, "t1:steps"), "11") == 0);
+    /* stopping starts the count again */
+    render(inst, 100);
+    set(inst, "stage:1", "steps=12\n"); set(inst, "commit", "after 2");
+    for (int i = 0; i < 20000 && S->commit_left > 1; i++) render(inst, 1);
+    set(inst, "play", "0"); render(inst, 2);
+    CHECK(S->commit == 3 && S->commit_left == 2);
+    set(inst, "play", "1"); render(inst, 1);
+    applied = -1;
+    for (int i = 0; i < 20000 && applied < 0; i++) { render(inst, 1); if (!S->stage_mask) applied = S->e.tick; }
+    CHECKM(applied >= 2 * 192 && applied < 2 * 192 + 2, "after a stop: applied at %g", applied);
+    set(inst, "play", "0"); render(inst, 2);
+    set(inst, "quant", "1 bar");
     api->destroy_instance(inst);
 }
 
