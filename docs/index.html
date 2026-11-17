@@ -120,7 +120,7 @@ pre code { overflow-wrap: normal; }
 <body>
 <main>
   <header>
-    <div class="label">Schwung tool for Ableton Move · build 0.4.1</div>
+    <div class="label">Schwung tool for Ableton Move · build 0.4.2</div>
     <h1>Move E-1</h1>
     <p class="lead">E-1 is a 16-track Euclidean sequencer for Ableton Move. It runs under Schwung and plays Move's own tracks, a computer over USB-C, or both.</p>
   </header>
@@ -378,6 +378,7 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
           <tr><td>Step row</td><td>The selected track's hits. Tap to toggle a step. <kbd>Shift</kbd> + step edits that step alone, in every cycle or in the cycle you are editing.</td></tr>
           <tr><td>Bottom 16 pads</td><td>The values of the last knob you touched, or the layer of a held left button.</td></tr>
           <tr><td>Knobs 1 to 8</td><td>The current page. <kbd>Shift</kbd> gives each knob's second function.</td></tr>
+          <tr><td>Shift</td><td>Hold for the second function of a knob, pad or button. With Shift set to Latch (Settings, Set page): tap <kbd>Shift</kbd> and it stays on for your next action, tap it twice to keep it on, tap once more to let go.</td></tr>
           <tr><td>Jog wheel</td><td>Turn: page. Click: home. <kbd>Shift</kbd> + turn: tempo.</td></tr>
           <tr><td>Left buttons</td><td>Pattern, Cycles, Random, Perform. Hold to use. Press twice to keep up, once more to let go.</td></tr>
           <tr><td>Mute</td><td>Hold and tap track pads. Press twice to keep it on.</td></tr>
@@ -389,7 +390,7 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
           <tr><td>Left, Right</td><td>Steps 17 to 64. <kbd>Shift</kbd>: rotate the track.</td></tr>
           <tr><td>Plus, Minus</td><td>Page the bottom pads, or move the keyboard an octave.</td></tr>
           <tr><td>Play</td><td>Start and stop. <kbd>Shift</kbd> + <kbd>Play</kbd>: clock source.</td></tr>
-          <tr><td>Menu</td><td>Save, load, new set, rename, settings. <kbd>Shift</kbd> + <kbd>Menu</kbd>: output.</td></tr>
+          <tr><td>Menu</td><td>Save, load, new set, rename, settings. <kbd>Shift</kbd> + <kbd>Menu</kbd>: settings of the selected track.</td></tr>
           <tr><td>Back</td><td>Step out of whatever is open. Hold: switch to Move, E-1 keeps playing. <kbd>Shift</kbd> + <kbd>Back</kbd>: quit E-1.</td></tr>
         </tbody>
       </table>
@@ -411,14 +412,15 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
           <tr><td>Track pads</td><td>Selected: bright orange, or cyan for a CC track. Other tracks: the same colour, very dim. Muted: off, or grey when selected. A track flashes white when it plays.</td></tr>
           <tr><td>Step row</td><td>Hits in the track's colour, the playhead white. Red: a hit with its own values. Yellow, while you edit a cycle: a step with its own values in that cycle. Hold <kbd>Shift</kbd> to see every step with its own values. Pink while <kbd>Random</kbd> or <kbd>Delete</kbd> is held: a retrigger step.</td></tr>
           <tr><td>Knob LEDs</td><td>Knobs 1 to 4 grey, 5 to 8 orange, like the two rows on screen. The last one touched is brighter.</td></tr>
-          <tr><td>White</td><td>The current value, the playing cycle or pattern.</td></tr>
-          <tr><td>Orange</td><td>Amounts, notes in the pool.</td></tr>
-          <tr><td>Grey</td><td>Choices not chosen.</td></tr>
-          <tr><td>Blue</td><td>Triplets, black keys, scales, saved patterns. Bright blue: patterns in the chain.</td></tr>
-          <tr><td>Yellow</td><td>The song's scale and root. Steps edited in the cycle you are editing.</td></tr>
-          <tr><td>Green</td><td>Bars for Length and Quant. Dark green: styles, grooves, phrases.</td></tr>
-          <tr><td>Pink</td><td>Modifier pads at the end of a row: octave, Fit, phrase rate, swing grid, Choke or Tail.</td></tr>
-          <tr><td>Red</td><td>Edited cycles and steps. Tracks waiting to be muted.</td></tr>
+          <tr><td>Shift</td><td>On while held. With Shift set to Latch: blinks while it waits for one action, on while kept on.</td></tr>
+          <tr><td>Bottom pads</td><td>Work like the track pads. Full colour: the value chosen, a dice line that plays, a move kept on. Very dim, same colour: a pad you can tap. Off: nothing there. White: a pad you hold, the playing cycle or pattern, a held perform move.</td></tr>
+          <tr><td>Orange</td><td>Amounts, straight divisions, notes in the pool. A bar of amounts lights up to the value.</td></tr>
+          <tr><td>Blue</td><td>Triplets, black keys, scales, Steps and Cycles bars, saved patterns. Full blue: patterns in the chain.</td></tr>
+          <tr><td>Yellow</td><td>Song pads, zero on signed values, waves. Steps edited in the cycle you are editing.</td></tr>
+          <tr><td>Green</td><td>Length, Quant, Loop, auto roll, styles, grooves, cadences.</td></tr>
+          <tr><td>Purple</td><td>Dotted divisions, Dice choices.</td></tr>
+          <tr><td>Pink</td><td>Modifier pads at the end of a row: octave, Fit, phrase rate, swing grid, Choke or Tail, new dice.</td></tr>
+          <tr><td>Red</td><td>Cycles: dark for each cycle, full for a cycle with its own edits. Edited steps. Tracks waiting to be muted.</td></tr>
         </tbody>
       </table>
     </div>
@@ -466,29 +468,30 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
     </div>
     <p>On a CC track, knob 1 is Send (Pulse, Change or Glide) and knob 2 is Slew, the glide speed. Knobs 3, 5 and 7 are unused. On CC A and CC B, knobs 1 to 8 are CC lanes 1 to 16. A lane is Off until you turn it up. <kbd>Shift</kbd> + knob sets the lane's CC number.</p>
     <h3>Settings</h3>
-    <p>Open it from <kbd>Menu</kbd>. <kbd>Back</kbd> leaves. Settings has two pages. Turn the jog wheel to switch. The Set page (header E-1 SET) holds what belongs to the whole set. The Track page (header names the track) holds settings of the selected tracks.</p>
+    <p>Open it from <kbd>Menu</kbd>, or press <kbd>Shift</kbd> + <kbd>Menu</kbd> to open the Track page of the selected track. <kbd>Back</kbd> or <kbd>Menu</kbd> leaves. Turn the jog wheel to switch pages. The Set page (header E-1 SET) holds what belongs to the whole set and to this Move. The Track page (header names the track) holds settings of the selected tracks.</p>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Knob</th><th>Set page</th><th>Track page</th><th>Track page, Shift</th></tr></thead>
+        <thead><tr><th>Knob</th><th>Set page</th><th>Track page</th></tr></thead>
         <tbody>
-          <tr><td>1</td><td>Dest: where tracks play, Move, Computer or Both.</td><td>Type: Note or CC track.</td><td>Rnd: chance that random amounts apply.</td></tr>
-          <tr><td>2</td><td>Clock: Move, Internal or Computer.</td><td>Repeat: Choke, a new hit cuts the last one. Tail: they overlap.</td><td>Rate: how often random values change.</td></tr>
-          <tr><td>3</td><td>Tempo: internal tempo, 20 to 300 BPM.</td><td>PhrRate: phrase length, x1 is 4 bars, x2 is 2, /2 is 8.</td><td>Grid: swing on single steps, pairs or fours.</td></tr>
-          <tr><td>4</td><td>ClkOut: send MIDI clock to the computer.</td><td>Follow: Off, Bass, Chord or Arp. See Harmony.</td><td>Loop: Free, or 1, 2, 4 or 8 bars after which chance and random values repeat.</td></tr>
-          <tr><td>5</td><td>Quant: when a queued or chained pattern starts.</td><td>Split: Off, or a track. See Harmony.</td><td>AutoRol: Off, or new dice every 1, 2, 4 or 8 bars.</td></tr>
-          <tr><td>6</td><td>SongRoot: the song's root note.</td><td>Mute: On or Off.</td><td>Source: how random amounts move. See Shapes.</td></tr>
-          <tr><td>7</td><td>SongScale: the song's scale.</td><td>Dir: Forward, Backward, Pendulum or Random. See Time.</td><td>Warp. See Time.</td></tr>
-          <tr><td>8</td><td>ChordTrk: Off, or the chord track 1 to 16.</td><td>DiceLen: the Lengths dice, On or Off.</td><td>Jitter. See Time.</td></tr>
+          <tr><td>1</td><td>Output: where tracks set to Global play, Move, Computer or Both.</td><td>Type: Note or CC track.</td></tr>
+          <tr><td>2</td><td>Clock: Move, Internal or Computer.</td><td>Chan: MIDI channel.</td></tr>
+          <tr><td>3</td><td>ClkOut: send MIDI clock to the computer.</td><td>Output: Global (the Set page's Output), Move, Computer or Both.</td></tr>
+          <tr><td>4</td><td>Tempo: internal tempo, 20 to 300 BPM. <kbd>Shift</kbd>: Quant, when a queued or chained pattern starts.</td><td>Dir: Forward, Backward, Pendulum or Random. See Time.</td></tr>
+          <tr><td>5</td><td>SongRoot: the song's root note.</td><td>Scale: Song, or one of 17 scales.</td></tr>
+          <tr><td>6</td><td>SongScale: the song's scale.</td><td>Root: Song, or C to B.</td></tr>
+          <tr><td>7</td><td>ChordTrk: Off, or the chord track 1 to 16.</td><td>Follow: Off, Bass, Chord or Arp. See Harmony.</td></tr>
+          <tr><td>8</td><td>Shift: Hold or Latch. Kept on this Move, not in the set.</td><td>Split: Off, or a track. See Harmony.</td></tr>
         </tbody>
       </table>
     </div>
+    <p>Everything else has a quicker way in: mute with <kbd>Shift</kbd> + track pad, Choke or Tail on the Repeats pads, PhrRate on the Phrase and Range pads, swing Grid on the Timing pads, and the random settings with <kbd>Random</kbd> held.</p>
   </section>
 
   <section id="harmony">
     <h2>Harmony</h2>
     <p><b>Song root and scale.</b> A set has one root and one scale, C minor in a new set. A track whose Scale or Root says Song plays in the song's key. Pitched tracks in Init and the starter sets use Song, so changing the song moves them all. A track with its own scale or root keeps it.</p>
     <p>Set the song on the Settings Set page, or from any track: touch Scale (Right page, knob 7) and hold <kbd>Shift</kbd> while you tap a scale pad. <kbd>Shift</kbd> + knob 7 shows the root keyboard; hold <kbd>Shift</kbd> and tap a key to set the song root. The selected track keeps its own setting.</p>
-    <p>On the Scale and Root pads, white is the track's choice, yellow is the song's, and the yellow pad at the lower right picks Song. With Song chosen the knob reads SONG and the list shows what it stands for, for example S:MINOR. The list footer names the song key.</p>
+    <p>On the Scale pads the scale that plays is bright blue. On the Root keyboard the root is pink, or yellow while the track follows the song. The yellow pad at the lower right picks Song and is bright while Song is chosen. With Song chosen the knob reads SONG and the list shows what it stands for, for example S:MINOR. The list footer names the song key.</p>
     <p>Scales: Chrom, Major, Minor, Penta, Hira, Iwato, Tetra, Dorian, Phryg (Phrygian), Lydian, Mixo (Mixolydian), Locri (Locrian), HarMin (harmonic minor), MelMin (melodic minor), Blues, MinPen (minor pentatonic), Whole (whole tone). Plus and Minus page the scale pads.</p>
     <p><b>Chord track.</b> Set ChordTrk on the Settings Set page. Its pool, moved by its own Pitch and Harmony in each cycle and step, is the current chord. Its pad lights blue.</p>
     <p><b>Follow.</b> <kbd>Shift</kbd> + knob 2 on the Right page (or Follow on the Settings Track page) sets what a note track takes from the chord track:</p>
@@ -510,7 +513,7 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
         <thead><tr><th>Knob</th><th>Pads</th></tr></thead>
         <tbody>
           <tr><td>Div, Time</td><td>Upper row: 1/1 to 1/64 and 1/4 dotted. Lower row: dotted 1/8 and 1/16, then triplets. Div only: the pink pad at the lower right turns Fit on and off.</td></tr>
-          <tr><td>Source</td><td>Random purple, Drift cyan, RampUp green, RampDn yellow, Tri orange, Square blue. The choice is white. Lower right, pink: new dice for the track.</td></tr>
+          <tr><td>Source</td><td>Random purple, Drift cyan, RampUp green, RampDn yellow, Tri orange, Square blue. The choice is bright, the others very dim. Lower right, pink: new dice for the track.</td></tr>
           <tr><td>Pitch</td><td>A one-octave keyboard, black keys above. Tap a key to add it to the pool or take it out. <kbd>Shift</kbd> + key only plays it. The end pads change octave and light up when the pool has notes that way. The footer shows the octave and the pool notes in it. Up to 8 notes.</td></tr>
           <tr><td>Root</td><td>The same keyboard. Tap the root.</td></tr>
           <tr><td>Style, Phrase, Groove</td><td>One pad per shape. The purple pad is Dice. The Phrase end pads set PhrRate.</td></tr>
@@ -546,7 +549,7 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
     </div>
     <ol class="run">
       <li>Turn Cycles (Left, knob 3) to set how many there are.</li>
-      <li>Hold <kbd>Cycles</kbd>. The bottom pads show them: white is playing, red is edited.</li>
+      <li>Hold <kbd>Cycles</kbd>. The bottom pads show them: white is playing, dark red is in use, full red has its own edits.</li>
       <li>Tap a cycle. The track loops it and the screen says EDIT. Let go of the button.</li>
       <li>Turn knobs, tap value pads or tap steps. Only that cycle changes.</li>
       <li>Press <kbd>Cycles</kbd> once. The track plays all its cycles again.</li>
@@ -594,7 +597,6 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
     <ul>
       <li><kbd>Random</kbd> + jog click rolls new dice for the track. The screen says REROLL. With a loop set, the new results repeat from then on.</li>
       <li>The pink pad at the lower right of the Loop and Rate pads rolls new dice too.</li>
-      <li>Loop is also on the Settings page: <kbd>Shift</kbd> + knob 4.</li>
     </ul>
     <h3>Dice</h3>
     <p>Dice write a new 16-step line for one part of a note track and leave the other parts alone. Hold <kbd>Random</kbd>, or press it twice to latch it, and take your fingers off the knobs. The upper row of the bottom pads becomes the dice.</p>
@@ -604,7 +606,7 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
         <tbody>
           <tr><td>1</td><td>Orange</td><td>Notes: which note of the pool each step plays. Style changes to Dice.</td></tr>
           <tr><td>2</td><td>Red</td><td>Accents: strong, plain and soft steps. Groove changes to Dice. Accent sets how strong.</td></tr>
-          <tr><td>3</td><td>Green</td><td>Lengths: short, medium, long and tied notes around Sustain. DiceLen turns On.</td></tr>
+          <tr><td>3</td><td>Green</td><td>Lengths: short, medium, long and tied notes around Sustain.</td></tr>
           <tr><td>4</td><td>Blue</td><td>Octaves: octave jumps inside Range. Phrase changes to Dice.</td></tr>
           <tr><td>5</td><td>Cyan</td><td>Rhythm: which hits Density takes out.</td></tr>
           <tr><td>7</td><td>Purple</td><td>All five at once.</td></tr>
@@ -613,7 +615,7 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
       </table>
     </div>
     <ul>
-      <li>A pad is bright while its line plays and dim while it does not. The screen names the line you rolled.</li>
+      <li>A pad is full colour while its line plays and very dim while it does not. All is bright when every line plays. Auto roll shows its setting bright. The screen names the line you rolled.</li>
       <li>Each line repeats every 16 steps. Mark a retrigger step and the lines start again there.</li>
       <li>Choose another Style, Groove or Phrase and that part plays as before. Choose Dice in the list to bring the line back.</li>
       <li>With <kbd>Random</kbd> latched, hold <kbd>Delete</kbd> and press a dice pad to clear that line. <kbd>Delete</kbd> + pad 7 clears all of them.</li>
@@ -647,8 +649,7 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
       <li>Knob 4, Warp, -100 to +100: positive values start slow and speed up, negative values start fast and slow down. The cycle keeps its length. Edit it per cycle for a bouncing-ball fill.</li>
       <li><kbd>Shift</kbd> + knob 4, Fit: the track's steps are spread evenly over its Length, or over one bar when Length is Off. 5 steps then play a true 5 against 4. Each cycle lasts the Length. Division is ignored and reads FIT. The pink pad at the lower right of the Div pads does the same.</li>
     </ul>
-    <p>Dir on the Settings Track page (knob 7) sets the way the playhead walks: Forward, Backward, Pendulum (there and back without playing the ends twice) or Random (a random step each time, the same order every loop when Loop is set). Mono styles walk their notes down while the playhead runs backwards. The Reverse perform pad flips whichever way the track runs.</p>
-    <p>Source, Warp and Jitter are also on the Settings Track page, with <kbd>Shift</kbd> on knobs 6, 7 and 8.</p>
+    <p>Dir on the Settings Track page (knob 4) sets the way the playhead walks: Forward, Backward, Pendulum (there and back without playing the ends twice) or Random (a random step each time, the same order every loop when Loop is set). Mono styles walk their notes down while the playhead runs backwards. The Reverse perform pad flips whichever way the track runs.</p>
   </section>
 
   <section id="perform">
@@ -676,7 +677,7 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
     <ul>
       <li>Save: press <kbd>Capture</kbd>, tap a slot. <kbd>Back</kbd> cancels.</li>
       <li>Play: hold <kbd>Pattern</kbd> and tap a slot. It starts at the next Quant line. Tap again to switch at once.</li>
-      <li>Chain: hold <kbd>Pattern</kbd>, hold the first slot and tap the others in order. Each pattern plays for its Length (the longest track Length, else its Loop, else one bar), rounded up to whole Quant lines, then the next starts. After the last the chain starts over. Chained slots light bright blue, the playing one white, the next one blinks. While <kbd>Pattern</kbd> is held the footer shows the chain, for example CHAIN 1&gt;3&gt;2. Tap a single slot to end the chain. The chain is saved with the set.</li>
+      <li>Chain: hold <kbd>Pattern</kbd>, hold the first slot and tap the others in order. Each pattern plays for its Length (the longest track Length, else its Loop, else one bar), rounded up to whole Quant lines, then the next starts. After the last the chain starts over. Saved slots are dark blue, chained slots full blue, the playing one white, and the next one blinks. While <kbd>Pattern</kbd> is held the footer shows the chain, for example CHAIN 1&gt;3&gt;2. Tap a single slot to end the chain. The chain is saved with the set.</li>
       <li><kbd>Copy</kbd> + two slots copies. <kbd>Delete</kbd> + slot clears.</li>
     </ul>
     <p><kbd>Menu</kbd> has six rows. Jog to move, click to choose, <kbd>Back</kbd> to step up.</p>
@@ -694,10 +695,10 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
     <h2>Move or computer</h2>
     <div class="split">
       <div>
-        <div class="label">Output (Shift + Menu)</div>
+        <div class="label">Output (Settings, Set page)</div>
         <p><strong>Move</strong>: notes go to Move's tracks by channel, 1 to 4.</p>
         <p><strong>Computer</strong>: notes go out over USB-C as <em>Ableton Move (Standalone Port)</em>. Set each instrument to the channel of its E-1 track.</p>
-        <p><strong>Both</strong>: both. Each track's Output can override this.</p>
+        <p><strong>Both</strong>: both. Each track's Output (Settings, Track page, knob 3, or <kbd>Shift</kbd> + knob 8 on the Right page) can send it elsewhere. Global follows this setting.</p>
       </div>
       <div>
         <div class="label">Clock (Shift + Play)</div>
@@ -729,7 +730,7 @@ ssh ableton@move.local 'cd /data/UserData/schwung/modules/tools &amp;&amp; tar x
   </section>
 
   <footer>
-    <p>Move E-1 build 0.4.1. Inspired by the Torso T-1. Runs on <a href="https://github.com/charlesvestal/schwung">Schwung</a>. <a href="https://github.com/pi43r/move-e1">Source</a>, MIT licence.</p>
+    <p>Move E-1 build 0.4.2. Inspired by the Torso T-1. Runs on <a href="https://github.com/charlesvestal/schwung">Schwung</a>. <a href="https://github.com/pi43r/move-e1">Source</a>, MIT licence.</p>
   </footer>
 </main>
 </body>

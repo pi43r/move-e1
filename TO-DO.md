@@ -2,7 +2,7 @@
 
 ## Hardware tests
 
-Run these on a Move with build 0.4.1. Tick each one that works.
+Run these on a Move with build 0.4.2. Tick each one that works.
 
 **Loading and switching**
 - [ ] E-1 opens from Tools after installing over a running Schwung.
@@ -84,6 +84,16 @@ Run these on a Move with build 0.4.1. Tick each one that works.
 - [ ] Hold Pattern, hold a slot, tap two more: they play in order, each for its Length (else one bar) on the Quant lines, and loop. Chained pads bright blue, playing white, next blinking. Footer shows CHAIN while Pattern is held.
 - [ ] A single tap on a slot ends the chain. The chain comes back after saving and loading the set, and after a restart.
 - [ ] Stopping and starting the transport during a chain keeps it in step.
+
+**0.4.2: pad lights, settings, Shift**
+- [ ] Bottom pads: the chosen value or a playing dice line is clearly bright, the other pads very dim in the same colour, nothing there is off. Check Div, Style, Scale, Repeats, Steps, Source and the dice.
+- [ ] Random held: a rolled dice line is easy to tell from an unrolled one across the room.
+- [ ] A held bottom pad lights white. Perform: held move white, latched move full colour.
+- [ ] Shift + Menu opens Settings on the selected track's Track page. Menu or Back leaves.
+- [ ] Track page: Type, Chan, Output, Dir, Scale, Root, Follow, Split all change the track. Per-track Output sends one track to the computer while others play on Move.
+- [ ] Set page: Output, Clock, ClkOut, Tempo (Shift: Quant), SongRoot, SongScale, ChordTrk, Shift.
+- [ ] Shift Latch: a tap blinks the Shift LED and the next action is a Shift action, then Shift goes off. A double tap keeps it on (LED on), one more tap lets go. Shift held still works as before.
+- [ ] Shift Latch survives a restart of E-1. Shift Hold behaves exactly as in 0.4.1.
 
 **Outputs and clock**
 - [ ] Output Move plays Move's tracks on channels 1 to 4.

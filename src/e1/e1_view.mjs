@@ -12,6 +12,7 @@ export const DIVISIONS = ["1/1", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64",
 export const LENGTHS = ["Off", "1", "2", "3", "4", "5", "6", "7", "8", "16"];
 export const CLOCKS = ["Move", "Internal", "Computer"];
 export const DESTS = ["Move", "Computer", "Both"];
+export const SHIFT_MODES = ["Hold", "Latch"];
 export const QUANTS = ["1/4", "1/2", "1 bar", "2 bars", "4 bars", "8 bars"];
 export const STYLES = ["PolyFix", "PolyRamp", "PolyClimb", "MonoFix", "MonoRamp", "MonoClimb", "Dice"];
 export const PHRASES = ["Cad1", "Cad2", "Cad3", "Cad4", "Saw", "Tri", "Sine", "Pulse", "Dice"];
@@ -107,7 +108,7 @@ export const TRACK_PARAMS = [
 ];
 
 export const GLOBAL_PARAMS = [
-    { key: "dest", name: "Dest", type: "enum", options: DESTS, div: 8 },
+    { key: "dest", name: "Output", type: "enum", options: DESTS, div: 8 },
     { key: "clock", name: "Clock", type: "enum", options: CLOCKS, div: 8 },
     { key: "bpm", name: "Tempo", type: "int", min: 20, max: 300, div: 1 },
     { key: "clockout", name: "ClkOut", type: "enum", options: ["Off", "On"], div: 8 },
@@ -115,6 +116,8 @@ export const GLOBAL_PARAMS = [
     { key: "songroot", name: "SongRoot", type: "enum", options: ROOTS, div: 5 },
     { key: "songscale", name: "SongScale", type: "enum", options: SCALES, div: 6 },
     { key: "chordtrack", name: "ChordTrk", type: "enum", options: TRACK_CHOICES, div: 4 },
+    /* Kept by the UI in session.json, not by the DSP: how Shift behaves on this Move. */
+    { key: "shiftmode", name: "Shift", type: "enum", options: SHIFT_MODES, div: 8 },
 ];
 export const GLOBAL_KEYS = new Set(GLOBAL_PARAMS.map((p) => p.key));
 
@@ -152,15 +155,17 @@ export const CC_PAGES = [
 ];
 /* Settings has two pages, so what belongs to the whole set and what belongs
  * to the selected track never share a screen: "Set" (the header says E-1 SET)
- * and "Track" (the header names the track). */
+ * and "Track" (the header names the track). Only what no knob page, pad or
+ * button already reaches; Shift + Menu opens Track straight away. */
 export const SETTINGS_PAGES = [
     { name: "Set",
-        keys: ["dest", "clock", "bpm", "clockout", "quant", "songroot", "songscale", "chordtrack"],
-        alt: [null, null, null, null, null, null, null, null] },
+        keys: ["dest", "clock", "clockout", "bpm", "songroot", "songscale", "chordtrack", "shiftmode"],
+        alt: [null, null, null, "quant", null, null, null, null] },
     { name: "Track",
-        keys: ["type", "tail", "phraserate", "follow", "split", "mute", "dir", "dicelen"],
-        alt: ["random", "rate", "swinggrid", "loop", "autoroll", "source", "warp", "jitter"] },
+        keys: ["type", "channel", "output", "dir", "scale", "root", "follow", "split"],
+        alt: [null, null, null, null, null, null, null, null] },
 ];
+export const TRACK_SETTINGS = SETTINGS_PAGES.length - 1;
 export const SETTINGS_PAGE = SETTINGS_PAGES[0];
 
 export const DEFAULT_NAMES = ["KICK", "SNARE", "HAT", "CLAP", "PERC", "TOM", "RIM", "SHAKE",
@@ -297,7 +302,20 @@ export const COL = {
     cyan: 46, dimCyan: 93, darkCyan: 94,
     blue: 17, dimBlue: 97, brightBlue: 16, lightGrey: 118,
     purple: 23, pink: 26, dimPink: 115,
+    /* The darkest shade of each hue (palette 65-116), for bottom pads that are there but not on. */
+    darkRed: 66, darkYellow: 80, darkestGreen: 86, darkBlue: 98, darkSky: 96, darkPurple: 110, darkPink: 116,
 };
+/* Bottom pads light the way track pads do: the chosen value, or a line or
+ * move that is on, in full colour; the rest of what you can tap in the
+ * darkest shade of the same hue; nothing there, off; white only while a pad
+ * is held, a pattern or cycle plays, or a perform move is held. */
+export const HUE = {
+    orange: [COL.orange, COL.darkOrange], red: [COL.red, COL.darkRed], yellow: [COL.yellow, COL.darkYellow],
+    green: [COL.green, COL.darkestGreen], cyan: [COL.cyan, COL.darkCyan], blue: [COL.blue, COL.darkBlue],
+    sky: [COL.brightBlue, COL.darkSky], purple: [COL.purple, COL.darkPurple], pink: [COL.pink, COL.darkPink],
+    grey: [COL.lightGrey, COL.dim],
+};
+export const lit = (hue, on) => HUE[hue][on ? 0 : 1];
 /* Buttons with a white LED take a brightness, not a palette number. */
 export const BTN = { off: 0, dim: 16, on: 124 };
 
@@ -352,15 +370,14 @@ const DIV_SLOTS = { 0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 10: 7, 11: 8, 12: 
 const COARSE = [-1, -0.5, -0.25, 0, 0.25, 0.5, 1];
 const NUDGE = [-5, -2, -1, null, 1, 2, 5];
 
-const ENUM_COL = { length: COL.green, quant: COL.green, scale: COL.blue, loop: COL.green, autoroll: COL.green, follow: COL.green, dir: COL.pink, fit: COL.pink };
-/* Source pads: one colour per shape so they read at a glance. */
-export const SOURCE_COL = [COL.purple, COL.cyan, COL.green, COL.yellow, COL.orange, COL.brightBlue];
-/* Track pads: the chord track is blue, tracks that follow it are green. */
+const ENUM_HUE = { length: "green", quant: "green", scale: "blue", loop: "green", autoroll: "green", follow: "green", dir: "pink", fit: "pink" };
+/* Source pads: one hue per shape so they read at a glance. */
+export const SOURCE_HUE = ["purple", "cyan", "green", "yellow", "orange", "sky"];
 const SCALE_PADS = 15;                               /* scales per pad page; pad 16 is Song */
-/* Dice pads: bright while the lane plays, dim while it does not. */
-const DICE_COL = [[COL.orange, COL.dimOrange], [COL.red, COL.dimRed], [COL.green, COL.darkGreen],
-    [COL.brightBlue, COL.dimBlue], [COL.cyan, COL.dimCyan]];
+/* Dice pads, one hue per line: full while the line plays, darkest while it does not. */
+const DICE_HUE = ["orange", "red", "green", "sky", "cyan"];
 const set = (key, value, label) => ({ k: "set", key, value: String(value), label });
+const trackHue = (s, t) => (isCCBit(s, t) ? "cyan" : "orange");
 
 /* What each of the 16 pads does for the current parameter.
  * Returns { title, pads: [{ c, act }] } with act null for an unused pad. */
@@ -372,21 +389,25 @@ export function padModel(st) {
     const v = st.values || {};
 
     if (mode === "pattern") {
+        /* Saved: dark blue. In the chain: blue. Playing: white. Empty: off,
+         * or darkest grey while a tap would save there. */
+        const saving = st.saveMode || st.shift;
         for (let i = 0; i < 16; i++) {
             const filled = st.patterns && st.patterns[i];
-            let c = filled ? COL.blue : COL.dim;
-            if (filled && st.chain && st.chain.includes(i)) c = COL.brightBlue;   /* in the chain */
-            if (st.current === i) c = COL.white;
+            let c = filled ? COL.darkBlue : (saving ? COL.dim : COL.off);
+            if (filled && st.chain && st.chain.length >= 2 && st.chain.includes(i)) c = COL.blue;
+            if (st.current === i && filled) c = COL.white;
             if (st.queued === i) c = blink ? COL.white : COL.blue;
             pads[i] = { c, act: { k: "pattern", i } };
         }
         return { title: "PATTERNS", pads };
     }
     if (mode === "perform") {
+        /* Darkest while idle, full colour while latched, white while held. */
         for (let i = 0; i < 16; i++) {
             const p = PERFORM[i];
             const held = st.perfHeld && st.perfHeld[i], latched = st.latched && st.latched[i];
-            pads[i] = { c: held || latched ? COL.white : COL[p.color], act: { k: "perf", i } };
+            pads[i] = { c: held ? COL.white : lit(p.color, latched), act: { k: "perf", i } };
         }
         return { title: "PERFORM", pads };
     }
@@ -395,24 +416,28 @@ export function padModel(st) {
          * the track's random dice at the right end. */
         const cc = isCCBit(s, st.focus | 0);
         const dm = s.dm | 0;
+        let all = true;
         DICE.forEach((d, i) => {
             if (cc && d.layer !== "rhythm") return;
-            pads[i] = { c: DICE_COL[i][(dm >> i) & 1 ? 0 : 1], act: { k: "dice", layer: d.layer, label: d.label } };
+            const on = ((dm >> i) & 1) === 1;
+            if (!on) all = false;
+            pads[i] = { c: lit(DICE_HUE[i], on), act: { k: "dice", layer: d.layer, label: d.label } };
         });
-        pads[6] = { c: COL.purple, act: { k: "dice", layer: "all", label: "ALL" } };
-        pads[7] = { c: (s.dh | 0) ? COL.pink : COL.dimPink, act: { k: "diceback" } };
+        pads[6] = { c: lit("purple", all), act: { k: "dice", layer: "all", label: "ALL" } };
+        pads[7] = { c: (s.dh | 0) ? COL.darkPink : COL.off, act: { k: "diceback" } };
         AUTOS.forEach((o, i) => {
-            pads[8 + i] = { c: o === v.autoroll ? COL.white : (i ? COL.green : COL.grey), act: { k: "autoroll", value: o } };
+            pads[8 + i] = { c: lit(i ? "green" : "grey", o === v.autoroll), act: { k: "autoroll", value: o } };
         });
-        pads[15] = { c: COL.pink, act: { k: "reroll" } };
+        pads[15] = { c: COL.darkPink, act: { k: "reroll" } };
         return { title: "DICE", pads };
     }
     if (mode === "cycles") {
+        /* In use: dark red. With its own edits: red. Playing: white.
+         * Picked for editing: blinks white and red. */
         const n = parseInt(v.cycles, 10) || 1;
         const em = s.em | 0, ce = s.ce | 0;
         for (let i = 0; i < 16; i++) {
-            let c = i < n ? COL.grey : COL.off;
-            if ((ce >> i) & 1) c = i < n ? COL.red : COL.dimRed;   /* has its own edits */
+            let c = i < n ? lit("red", (ce >> i) & 1) : COL.off;
             if (s.r && !em && i === (s.pc | 0)) c = COL.white;
             if ((em >> i) & 1) c = blink ? COL.white : COL.red;
             pads[i] = { c, act: { k: "cycle", i } };
@@ -429,26 +454,24 @@ export function padModel(st) {
     const page = st.padPage | 0;
 
     if (key === "scale" || key === "songscale") {
-        /* Blue: scales. White: the one chosen. Yellow: the song's scale, and
-         * the Song pad at the end. Shift + pad sets the song's scale. */
+        /* Blue: the scale that plays. Yellow pad at the end: Song, bright
+         * while the track follows the song. Shift + pad sets the song's scale. */
         const track = key === "scale";
-        const song = SCALES.indexOf(v.songscale);
+        const playing = track ? resolved(v, "scale") : cur;
         for (let i = 0; i < SCALE_PADS; i++) {
             const idx = page * SCALE_PADS + i;
             if (idx >= SCALES.length) break;
-            let c = SCALES[idx] === cur ? COL.white : COL.blue;
-            if (track && cur === SONG && idx === song) c = COL.yellow;
-            pads[i] = { c, act: set(key, SCALES[idx], m.name + " " + SCALES[idx]) };
+            pads[i] = { c: lit("blue", SCALES[idx] === playing), act: set(key, SCALES[idx], m.name + " " + SCALES[idx]) };
         }
-        if (track) pads[15] = { c: cur === SONG ? COL.white : COL.yellow, act: set(key, SONG, "Scale " + songLabel(v, "scale")) };
+        if (track) pads[15] = { c: lit("yellow", cur === SONG), act: set(key, SONG, "Scale " + songLabel(v, "scale")) };
         return { title: track ? "SCALE" : "SONG SCALE", pads };
     }
     if (key === "chordtrack" || key === "split") {
-        /* One pad per track; the chosen one again turns it off. */
+        /* One pad per track in its own hue; the chosen one again turns it off. */
         for (let i = 0; i < 16; i++) {
             const on = m.options.indexOf(cur) === i + 1;
             const self = key === "split" && i === (st.focus | 0);
-            pads[i] = { c: on ? COL.white : (self ? COL.off : (isCCBit(s, i) ? COL.dimCyan : COL.dimOrange)),
+            pads[i] = { c: self ? COL.off : lit(trackHue(s, i), on),
                 act: self ? null : set(key, on ? 0 : i + 1, m.name + (on ? " OFF" : " T" + (i + 1))) };
         }
         return { title: key === "split" ? "SPLIT TO" : "CHORD TRACK", pads };
@@ -463,17 +486,18 @@ export function padModel(st) {
             const pc = keyboardNote(i);
             if (pc < 0) continue;
             const black = i < 8;
+            const key0 = black ? COL.darkBlue : COL.dim;            /* a key you can tap */
             if (key === "root" || key === "songroot") {
                 /* Pink: the root chosen. Yellow: the song's root while the track follows it. */
                 const mark = key === "root" && cur === SONG ? COL.yellow : COL.pink;
-                pads[i] = { c: pc === root ? mark : (black ? COL.blue : COL.white), act: set(key, ROOTS[pc], "ROOT " + ROOTS[pc]) };
+                pads[i] = { c: pc === root ? mark : key0, act: set(key, ROOTS[pc], "ROOT " + ROOTS[pc]) };
                 continue;
             }
             const note = 12 * (oct + 2) + pc;
             const inScale = scale.includes(((pc - root) % 12 + 12) % 12);
             if (note > 127) continue;
-            /* Keys are dim so the notes in the pool stand out. */
-            let c = inScale ? (black ? COL.dimBlue : COL.grey) : COL.dim;
+            /* Scale notes dark, notes in the pool orange, the rest off. */
+            let c = inScale ? key0 : COL.off;
             if (pool.has(note)) c = COL.orange;
             pads[i] = { c, act: inScale || pool.has(note) ? { k: "pool", note } : null };
         }
@@ -482,55 +506,59 @@ export function padModel(st) {
             const lo = 12 * (oct + 2);
             let above = false, below = false;
             for (const n of pool) { if (n >= lo + 12) above = true; if (n < lo) below = true; }
-            pads[7] = { c: above ? COL.pink : COL.dimPink, act: { k: "oct", d: 1 } };
-            pads[15] = { c: below ? COL.pink : COL.dimPink, act: { k: "oct", d: -1 } };
+            pads[7] = { c: lit("pink", above), act: { k: "oct", d: 1 } };
+            pads[15] = { c: lit("pink", below), act: { k: "oct", d: -1 } };
         }
-        if (key === "root") pads[15] = { c: cur === SONG ? COL.white : COL.yellow, act: set("root", SONG, "Root " + songLabel(v, "root")) };
+        if (key === "root") pads[15] = { c: lit("yellow", cur === SONG), act: set("root", SONG, "Root " + songLabel(v, "root")) };
         return { title: key === "pitch" ? "NOTES C" + oct : (key === "root" ? "ROOT" : "SONG ROOT"), pads };
     }
 
     if (key === "division" || key === "time" || key === "rate") {
+        /* Straight orange, triplets blue, dotted purple. */
         for (const slot in DIV_SLOTS) {
             const idx = DIV_SLOTS[slot];
-            const c = DIVISIONS[idx] === cur ? COL.white : (idx < 7 ? COL.grey : (idx < 12 ? COL.blue : COL.purple));
-            pads[slot] = { c, act: set(key, DIVISIONS[idx], m.name + " " + DIVISIONS[idx]) };
+            const hue = idx < 7 ? "orange" : (idx < 12 ? "blue" : "purple");
+            pads[slot] = { c: lit(hue, DIVISIONS[idx] === cur), act: set(key, DIVISIONS[idx], m.name + " " + DIVISIONS[idx]) };
         }
-        if (key === "rate") pads[15] = { c: COL.pink, act: { k: "reroll" } };
+        if (key === "rate") pads[15] = { c: COL.darkPink, act: { k: "reroll" } };
         /* Division: the pink pad at the end turns Fit on and off. */
-        if (key === "division") pads[15] = { c: v.fit === "On" ? COL.pink : COL.dimPink, act: { k: "fit" } };
+        if (key === "division") pads[15] = { c: lit("pink", v.fit === "On"), act: { k: "fit" } };
         return { title: key === "division" && v.fit === "On" ? "DIV (FIT ON)" : title, pads };
     }
 
     if (key === "style") {
         [0, 1, 2, 8, 9, 10, 4].forEach((slot, i) => {
-            pads[slot] = { c: STYLES[i] === cur ? COL.white : (i === 6 ? COL.purple : COL.darkGreen), act: set("style", STYLES[i], STYLES[i]) };
+            pads[slot] = { c: lit(i === 6 ? "purple" : "green", STYLES[i] === cur), act: set("style", STYLES[i], STYLES[i]) };
         });
         return { title, pads };
     }
     if (key === "source") {
-        /* One colour per shape, the chosen one white; pink re-rolls (Drift too). */
+        /* One hue per shape; pink re-rolls (Drift too). */
         SOURCES.forEach((o, i) => {
-            pads[i] = { c: o === cur ? COL.white : SOURCE_COL[i], act: set("source", o, "SOURCE " + o) };
+            pads[i] = { c: lit(SOURCE_HUE[i], o === cur), act: set("source", o, "SOURCE " + o) };
         });
-        pads[15] = { c: COL.pink, act: { k: "reroll" } };
+        pads[15] = { c: COL.darkPink, act: { k: "reroll" } };
         return { title, pads };
     }
     if (key === "phrase" || key === "groove") {
+        /* Cadences and grooves green, waves yellow, Dice purple. */
         const opts = key === "phrase" ? PHRASES : GROOVES;
         [0, 1, 2, 3, 8, 9, 10, 11, 4].forEach((slot, i) => {
-            pads[slot] = { c: opts[i] === cur ? COL.white : (i === 8 ? COL.purple : (key === "phrase" && i < 4 ? COL.green : COL.darkGreen)), act: set(key, opts[i], opts[i]) };
+            const hue = i === 8 ? "purple" : (i < 4 ? "green" : "yellow");
+            pads[slot] = { c: lit(hue, opts[i] === cur), act: set(key, opts[i], opts[i]) };
         });
         if (key === "phrase") ratePads(pads, v);
         return { title, pads };
     }
 
     if (m.type === "enum") {
+        const hue = ENUM_HUE[key] || "orange";
         m.options.slice(0, 16).forEach((o, i) => {
-            pads[i] = { c: o === cur ? COL.white : (ENUM_COL[key] || COL.grey), act: set(key, o, m.name + " " + o) };
+            pads[i] = { c: lit(hue, o === cur), act: set(key, o, m.name + " " + o) };
         });
         /* Pink at the end of the row: a random start for Length, new dice for Loop. */
-        if (key === "length") pads[15] = { c: COL.pink, act: { k: "randstart" } };
-        if (key === "loop") pads[15] = { c: COL.pink, act: { k: "reroll" } };
+        if (key === "length") pads[15] = { c: COL.darkPink, act: { k: "randstart" } };
+        if (key === "loop") pads[15] = { c: COL.darkPink, act: { k: "reroll" } };
         return { title, pads };
     }
 
@@ -539,29 +567,29 @@ export function padModel(st) {
         slots.forEach((slot, i) => {
             const n = page * 14 + i;
             if (n >= REPEATS_INF) return;
-            pads[slot] = { c: n === curN ? COL.white : COL.orange, act: set(key, n, "REPEATS " + n) };
+            pads[slot] = { c: lit("orange", n === curN), act: set(key, n, "REPEATS " + n) };
         });
-        pads[15] = { c: curN >= REPEATS_INF ? COL.white : COL.brightBlue, act: set(key, REPEATS_INF, "REPEATS INF") };
-        pads[7] = { c: v.tail === "Tail" ? COL.pink : COL.dimPink, act: set("tail", v.tail === "Tail" ? "Choke" : "Tail", v.tail === "Tail" ? "CHOKE" : "TAIL") };
+        pads[15] = { c: lit("sky", curN >= REPEATS_INF), act: set(key, REPEATS_INF, "REPEATS INF") };
+        pads[7] = { c: lit("pink", v.tail === "Tail"), act: set("tail", v.tail === "Tail" ? "Choke" : "Tail", v.tail === "Tail" ? "CHOKE" : "TAIL") };
         return { title, pads };
     }
 
     const span = m.max - m.min;
     if (m.min < 0) {
-        /* Bipolar: lower row jumps to coarse amounts with zero in the
-         * middle, upper row nudges, as on the T-1. */
+        /* Bipolar: lower row jumps to coarse amounts with zero (yellow) in
+         * the middle, upper row nudges, as on the T-1. */
         COARSE.forEach((f, i) => {
             const val = Math.round(f * m.max);
-            pads[8 + i] = { c: val === curN ? COL.white : (f === 0 ? COL.grey : COL.orange), act: set(key, val, m.name + " " + val) };
+            pads[8 + i] = { c: lit(f === 0 ? "yellow" : "orange", val === curN), act: set(key, val, m.name + " " + val) };
         });
         NUDGE.forEach((d, i) => {
-            if (d === null) pads[i] = { c: COL.grey, act: set(key, 0, m.name + " 0") };
-            else pads[i] = { c: COL.dimOrange, act: { k: "nudge", key, d } };
+            if (d === null) pads[i] = { c: COL.darkYellow, act: set(key, 0, m.name + " 0") };
+            else pads[i] = { c: COL.darkOrange, act: { k: "nudge", key, d } };
         });
         if (key === "range") ratePads(pads, v);
         if (key === "timing") {
-            pads[7] = { c: v.swinggrid === "x2" ? COL.pink : COL.dimPink, act: set("swinggrid", v.swinggrid === "x2" ? "x1" : "x2", "GRID " + (v.swinggrid === "x2" ? "X1" : "X2")) };
-            pads[15] = { c: v.swinggrid === "x4" ? COL.pink : COL.dimPink, act: set("swinggrid", v.swinggrid === "x4" ? "x1" : "x4", "GRID " + (v.swinggrid === "x4" ? "X1" : "X4")) };
+            pads[7] = { c: lit("pink", v.swinggrid === "x2"), act: set("swinggrid", v.swinggrid === "x2" ? "x1" : "x2", "GRID " + (v.swinggrid === "x2" ? "X1" : "X2")) };
+            pads[15] = { c: lit("pink", v.swinggrid === "x4"), act: set("swinggrid", v.swinggrid === "x4" ? "x1" : "x4", "GRID " + (v.swinggrid === "x4" ? "X1" : "X4")) };
         }
         return { title, pads };
     }
@@ -576,21 +604,21 @@ export function padModel(st) {
     else vals = Array.from({ length: 16 }, (_, i) => Math.round(m.min + span * (i + 1) / 16));
     vals.forEach((val, i) => {
         const lab = isLane(key) && val < 0 ? "OFF" : String(val);
-        /* A bar, as the T-1 shows Steps: lit up to the value, the value white.
-         * Channel is a choice, not an amount, so only the choice is bright. */
+        /* A bar, as the T-1 shows Steps: full colour up to and including the
+         * value, darkest above. Channel is a choice, not an amount, so only
+         * the choice is bright. A CC lane's Off pad is red. */
         let c;
-        if (val === curN) c = COL.white;
-        else if (key === "channel") c = COL.grey;
-        else if (key === "steps" || key === "cycles") c = val < curN ? COL.blue : COL.dim;
-        else c = val < curN ? COL.orange : COL.dimOrange;
+        if (isLane(key) && val < 0) c = lit("red", curN < 0);
+        else if (key === "channel") c = lit("orange", val === curN);
+        else c = lit(key === "steps" || key === "cycles" ? "blue" : "orange", val <= curN);
         pads[i] = { c, act: set(key, val, m.name + " " + lab) };
     });
     return { title, pads };
 }
 
 function ratePads(pads, v) {
-    pads[7] = { c: v.phraserate === "x2" ? COL.pink : COL.dimPink, act: set("phraserate", v.phraserate === "x2" ? "x1" : "x2", "PHRASE " + (v.phraserate === "x2" ? "X1" : "X2")) };
-    pads[15] = { c: v.phraserate === "/2" ? COL.pink : COL.dimPink, act: set("phraserate", v.phraserate === "/2" ? "x1" : "/2", "PHRASE " + (v.phraserate === "/2" ? "X1" : "/2")) };
+    pads[7] = { c: lit("pink", v.phraserate === "x2"), act: set("phraserate", v.phraserate === "x2" ? "x1" : "x2", "PHRASE " + (v.phraserate === "x2" ? "X1" : "X2")) };
+    pads[15] = { c: lit("pink", v.phraserate === "/2"), act: set("phraserate", v.phraserate === "/2" ? "x1" : "/2", "PHRASE " + (v.phraserate === "/2" ? "X1" : "/2")) };
 }
 
 /* How many pad pages a parameter has (for the +/- buttons). */
@@ -634,7 +662,11 @@ export function ledFrame(st) {
     }
 
     const model = padModel(st);
-    for (let i = 0; i < 16; i++) out[slotNote(i)] = model.pads[i].c;
+    /* A bottom pad under a finger is white while it does something. */
+    for (let i = 0; i < 16; i++) {
+        const p = model.pads[i];
+        out[slotNote(i)] = st.slotsDown && st.slotsDown.has(i) && p.act ? COL.white : p.c;
+    }
 
     /* Step row: the cycle being edited, else the one playing. */
     const steps = s.sn | 0 || parseInt((st.values || {}).steps, 10) || 16;
@@ -692,6 +724,7 @@ export const RANDOM_EXTRA = { cycles: "jitter", division: "warp", dicetype: "sou
 export function knobKeys(st) {
     const pg = currentPage(st);
     let keys = st.shift ? pg.alt : pg.keys;
+    if (st.settings && st.shift) keys = pg.keys.map((k, i) => pg.alt[i] || k);   /* settings: Shift swaps only knob 4 on Set */
     if (st.randomHeld) keys = keys.map((k) => (k ? randomKey(k) || (st.settings ? null : RANDOM_EXTRA[k] || null) : null));
     return keys;
 }
@@ -768,7 +801,7 @@ export function pageOptions(st, lib) {
     let label = pg.name;
     if (((s.em | 0) || (s.sm && s.sm !== "0")) && !st.settings) title = cut(title, 8) + " EDIT";
     if (st.randomHeld) label = "Random";
-    else if (st.shift) label = pg.name + " 2";
+    else if (st.shift && !(st.settings && !pg.alt.some((k) => k))) label = pg.name + " 2";
     return {
         page: { kind: lib.PAGE_KNOBS, name: label, level: "root", keys },
         metaIndex: lib.buildMetaIndex({ chainParams: paramDefs(s, st.values) }),

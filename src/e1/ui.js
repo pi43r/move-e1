@@ -16,7 +16,7 @@
  *   Mute             hold + track pads, applied together on release.
  *   Sample           hold + turn a knob = how much that knob's value wanders.
  *   Jog              page; click = home. Shift+jog = tempo.
- *   Menu             save, load, rename, settings.
+ *   Menu             save, load, rename, settings. Shift+Menu: track settings.
  *
  * Inspired by the Torso T-1. Not affiliated with Torso Electronics.
  */
@@ -32,7 +32,7 @@ import {
     PERFORM, CLOCKS, DESTS, COL, BTN, STEP_BASE, GLOBAL_KEYS,
     valuesFrom, metaFor, ledFrame, pageOptions, drawLayer, LAYER_COL, currentPages, pageIndex, knobKeys,
     padModel, padMode, padPages, padToTrack, padToSlot, trackName, AUTOS, SONG, songLabel, SOURCES,
-    knobLeds, drawSelection, drawValueList, selectedKnob, drawCycleStrip,
+    knobLeds, drawSelection, drawValueList, selectedKnob, drawCycleStrip, TRACK_SETTINGS,
 } from "./e1_view.mjs";
 import { createLibrary, createMenu, starterSet, cleanChain, chainLines, chainNext } from "./e1_library.mjs";
 
@@ -62,7 +62,7 @@ const IDENTITY = new Set(["name", "type", "channel", "output", "mute"]);
 const st = {
     focus: 0, pageName: "Left", settings: false, setPage: 0, stepPage: 0, touched: -1,
     padKey: "steps", padPage: 0, kbOct: 3, selKnob: 0, listKey: null, listUntil: 0,
-    shift: false, muteHeld: false, mutePend: 0, copyHeld: false, delHeld: false,
+    shift: false, shiftHeld: false, shiftLatch: 0, shiftMode: "Hold", slotsDown: new Set(), muteHeld: false, mutePend: 0, copyHeld: false, delHeld: false,
     randomHeld: false, tempHeld: false, tempLock: false, keepTemp: false, fzOn: false, fzLock: false, fzLen: 4, fzMask: 0xFFFF, muteLock: false, saveMode: false,
     layer: null, layerHeld: null, layerLock: null,
     held: new Set(), snap: null, values: {}, warn: null, now: 0,
@@ -91,6 +91,12 @@ let cycPadsDown = new Set();
 let wasTyping = false;
 let backDownAt = 0;
 let lib = null, menu = null;
+/* Shift in Latch mode: a tap keeps Shift on for one action, a double tap
+ * locks it, a tap while locked lets go. shiftLatch: 0 off, 1 one action, 2 locked. */
+let shiftDownAt = 0, shiftTapAt = -1e9, shiftUsed = false, shiftKeep = false;
+let latchSpent = false, latchUseAt = 0;
+const latchDown = new Set();             /* controls pressed while Shift is latched for one action */
+const LATCH_TURN_MS = 800;               /* a knob turned with no touch ends the action this long after */
 
 /* ------------------------------------------------------------ DSP I/O */
 
@@ -107,6 +113,7 @@ function poll() {
     try { snap = JSON.parse(s); } catch (e) { return; }
     st.snap = snap;
     st.values = valuesFrom(snap, pkeys);
+    st.values.shiftmode = st.shiftMode;
     const fl = snap.fl | 0;
     if (fl) for (let t = 0; t < 16; t++) if ((fl >> t) & 1) st.flashUntil[t] = st.now + 90;
     if (st.queued >= 0 && !(snap.q | 0)) {          /* the queued pattern landed */
@@ -256,6 +263,7 @@ function graft(fromText, dst) {
 /* ------------------------------------------------------------ edits */
 
 function setGlobal(key, value) {
+    if (key === "shiftmode") { setShiftMode(value); return; }
     if (key === "dest") {
         setP("dest", value);
         /* Clock follows the destination: Move -> follow Move,
@@ -525,7 +533,7 @@ function saveSession() {
     if (typeof host_ensure_dir === "function") host_ensure_dir(SAVE_DIR);
     host_write_file(SESSION_FILE, JSON.stringify({
         v: 3, setId: st.setId, setName: st.setName, dirty: st.dirty, current: st.current, patterns: st.patterns,
-        chain: st.chain,
+        chain: st.chain, shift: st.shiftMode,
     }));
 }
 
@@ -535,6 +543,7 @@ function loadSession() {
     if (!text) return;
     try {
         const o = JSON.parse(text);
+        if (o && o.shift === "Latch") st.shiftMode = "Latch";     /* how Shift behaves on this Move */
         if (!o || o.v !== 3) return;
         if (Array.isArray(o.patterns)) for (let i = 0; i < 16; i++) st.patterns[i] = o.patterns[i] || null;
         if (typeof o.current === "number") st.current = o.current;
@@ -693,6 +702,16 @@ function reselect() {
     if (i >= 0) { st.selKnob = i; showPadsFor(keys[i]); }
 }
 
+/* Shift + Menu: Settings on the Track page, for the selected track. Again closes it. */
+function openTrackSettings() {
+    if (menu && menu.isOpen()) menu.close();
+    if (st.settings && st.setPage === TRACK_SETTINGS) { st.settings = false; reselect(); dirty = true; return; }
+    st.settings = true; st.setPage = TRACK_SETTINGS;
+    knobAcc.fill(0);
+    reselect();
+    dirty = true;
+}
+
 function changePage(d) {
     const p = pages();
     if (st.settings) {                /* Set, then Track */
@@ -777,6 +796,8 @@ function onSlot(i, on, vel) {
     const mode = padMode(st);
     /* A note heard from this pad ends on release, whatever the pads show by then. */
     if (!on && audNotes[i]) { setP("aud:" + audNotes[i].t, audNotes[i].n + " 0"); delete audNotes[i]; }
+    if (on) st.slotsDown.add(i); else st.slotsDown.delete(i);
+    dirty = true;
     layerPadUsed = true;
     if (mode !== "pattern") st.patDown = [];
     if (mode === "perform") { perfPress(i, on); return; }
@@ -877,6 +898,68 @@ function onLayerButton(cc, down) {
             for (let i = 0; i < 16; i++) if (st.perfHeld[i]) { st.perfHeld[i] = false; if (!st.latched[i]) disengage(i); }
     }
     refreshLayer();
+}
+
+/* ------------------------------------------------------------ Shift */
+
+/* st.shift is what every gesture reads: held, or latched in Latch mode. */
+function syncShift() {
+    const was = st.shift;
+    st.shift = st.shiftHeld || st.shiftLatch > 0;
+    if (was !== st.shift) { if (!st.shift) stepPicking = false; knobAcc.fill(0); }
+    dirty = true;
+}
+
+function onShift(down) {
+    if (st.shiftMode !== "Latch") {               /* Hold: Shift is on while held */
+        st.shift = down; st.shiftHeld = down; st.shiftLatch = 0;
+        if (!down) stepPicking = false;
+        knobAcc.fill(0); dirty = true;
+        return;
+    }
+    if (down) {
+        shiftKeep = false;
+        if (st.shiftLatch === 2) { st.shiftLatch = 0; shiftKeep = true; toast("SHIFT", "OFF"); }
+        else if (st.shiftLatch === 1) {
+            shiftKeep = true;
+            if (st.now - shiftTapAt < DOUBLE_MS) { st.shiftLatch = 2; toast("SHIFT", "LOCKED"); }
+            else st.shiftLatch = 0;
+        }
+        st.shiftHeld = true; shiftDownAt = st.now; shiftUsed = false;
+    } else {
+        st.shiftHeld = false;
+        if (!shiftKeep && !shiftUsed && st.now - shiftDownAt < TAP_MS) {
+            st.shiftLatch = 1; shiftTapAt = st.now; latchSpent = false; latchDown.clear();
+        }
+    }
+    syncShift();
+}
+
+function setShiftMode(value) {
+    st.shiftMode = value === "Latch" ? "Latch" : "Hold";
+    if (st.values) st.values.shiftmode = st.shiftMode;
+    st.shiftLatch = 0; st.shiftHeld = false;
+    syncShift();
+    sessionDirty = true;
+    toast("SHIFT", st.shiftMode === "Latch" ? "TAP TO LATCH" : "HOLD");
+}
+
+/* Latched for one action: the action ends when every control pressed since
+ * is let go again, or a while after the last turn of a knob. */
+function latchEnd() { st.shiftLatch = 0; latchSpent = false; latchDown.clear(); syncShift(); }
+
+function latchTrack(data, before) {
+    const s = data[0] & 0xF0, d1 = data[1] | 0, d2 = data[2] | 0;
+    if (s === 0xB0 && d1 === CC.shift) return;
+    if (before && st.shiftHeld && (s === 0x90 ? d2 > 0 : s === 0xB0 && d2 > 0)) shiftUsed = true;
+    if (st.shiftLatch !== 1 || st.shiftHeld) return;
+    const turn = s === 0xB0 && (d1 === CC.jogTurn || (d1 >= CC.knob0 && d1 < CC.knob0 + 8));
+    if (turn) { if (before) { latchSpent = true; latchUseAt = st.now; } return; }
+    const id = (s === 0xB0 ? "c" : "n") + d1;
+    const press = s === 0xB0 ? d2 > 0 : s === 0x90 && d2 > 0;
+    if (s !== 0xB0 && s !== 0x90 && s !== 0x80) return;
+    if (before) { if (press) { latchDown.add(id); latchSpent = true; } return; }
+    if (!press) { latchDown.delete(id); if (latchSpent && latchDown.size === 0) latchEnd(); }
 }
 
 function onMute(down) {
@@ -982,7 +1065,7 @@ function onCC(cc, v) {
     }
     if (down && st.delHeld) delUsed = true;
     if (menu && menu.isOpen() && onMenuInput(cc, v)) { dirty = true; return; }
-    if (cc === CC.shift) { st.shift = down; if (!down) stepPicking = false; knobAcc.fill(0); dirty = true; return; }
+    if (cc === CC.shift) { onShift(down); return; }
     if (cc === CC.mute) { onMute(down); return; }
     if (cc === CC.sample) { onTemp(down); return; }
     if (cc === CC.loop) { onFreeze(down); return; }
@@ -1008,11 +1091,8 @@ function onCC(cc, v) {
     switch (cc) {
     case CC.play: pressPlay(); break;
     case CC.menu:
-        if (st.shift) {
-            const d = st.snap ? st.snap.d | 0 : 0;
-            setGlobal("dest", DESTS[(d + 1) % 3]);
-            toast("OUT", DESTS[(d + 1) % 3]);
-        } else if (st.settings) { st.settings = false; reselect(); dirty = true; }
+        if (st.shift) openTrackSettings();
+        else if (st.settings) { st.settings = false; reselect(); dirty = true; }
         else if (menu) { menu.open(); dirty = true; }
         break;
     case CC.jogClick: if (st.randomHeld) reroll(); else goHome(); break;
@@ -1051,9 +1131,11 @@ globalThis.onMidiMessageInternal = function (data) {
     if (isTextEntryActive()) { handleTextEntryMidi(data); return; }
     const s = data[0] | 0, d1 = data[1] | 0, d2 = data[2] | 0, type = s & 0xF0;
     if (s >= 0xF8) return;
+    latchTrack(data, true);
     if (type === 0x90) onNote(d1, d2);
     else if (type === 0x80) onNote(d1, 0);
     else if (type === 0xB0) onCC(d1, d2);
+    latchTrack(data, false);
 };
 
 globalThis.onMidiMessageExternal = function () { /* E-1 ignores incoming notes for now */ };
@@ -1158,7 +1240,8 @@ function buttonFrame() {
     b[CC.play] = s.r ? COL.green : COL.grey;
     b[CC.sample] = s.tmp ? COL.yellow : COL.dim;
     b[CC.menu] = w((menu && menu.isOpen()) || st.settings);
-    b[CC.shift] = w(st.shift);
+    /* Shift latched for one action blinks; held or locked it is on. */
+    b[CC.shift] = st.shiftLatch === 1 && !st.shiftHeld ? (Math.floor(st.now / 250) % 2 ? BTN.on : BTN.dim) : w(st.shift);
     b[CC.mute] = w(st.muteHeld || st.muteLock);
     b[CC.loop] = w(st.fzOn);
     b[CC.capture] = w(st.saveMode);
@@ -1313,7 +1396,11 @@ globalThis.init = function () {
  * reached us, so let go of everything held. */
 globalThis.onResume = function () {
     st.now = Date.now();
-    st.shift = st.muteHeld = st.copyHeld = st.delHeld = st.saveMode = false;
+    st.shift = st.shiftHeld = st.muteHeld = st.copyHeld = st.delHeld = st.saveMode = false;
+    if (st.shiftLatch === 1) st.shiftLatch = 0;
+    st.shift = st.shiftLatch > 0;
+    latchDown.clear(); latchSpent = false;
+    st.slotsDown.clear();
     st.mutePend = 0;
     st.held.clear();
     for (const t of [...audTracks]) auditionOff(t);
@@ -1347,6 +1434,7 @@ globalThis.tick = function () {
     if (typing) { tickTextEntry(); draw(); wasTyping = true; return; }
     if (wasTyping) { wasTyping = false; ledHave = {}; dirty = true; }   /* text entry used the pads */
     if (backDownAt && st.now - backDownAt >= BACK_HOLD_MS) { toMove(); return; }
+    if (st.shiftLatch === 1 && latchSpent && latchDown.size === 0 && st.now - latchUseAt > LATCH_TURN_MS) latchEnd();
     if ((frame & 15) === 0) updateWarning();
     pushLEDs();
     const showing = !!(st.toast && st.toast.until > st.now);
