@@ -3,6 +3,7 @@ name: Release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:   # Run from the Actions tab: tags the version in module.json
 
 permissions:
   contents: write
@@ -12,12 +13,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check version
+      - name: Pick the tag
         run: |
-          V="${GITHUB_REF_NAME#v}"
-          for f in src/e1/module.json; do
-            grep -q "\"version\": \"$V\"" "$f" || { echo "$f is not at version $V"; exit 1; }
-          done
+          V=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' src/e1/module.json)
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            [ "${GITHUB_REF_NAME#v}" = "$V" ] || { echo "module.json is at $V, tag is $GITHUB_REF_NAME"; exit 1; }
+          fi
+          echo "TAG=v$V" >> "$GITHUB_ENV"
       - run: make test
       - name: Build
         run: |
@@ -26,12 +28,14 @@ jobs:
           bash scripts/build.sh
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
           files: |
             dist/e1-module.tar.gz
       - name: Update release.json on main
         run: |
-          V="${GITHUB_REF_NAME#v}"
-          BASE="https://github.com/${{ github.repository }}/releases/download/${GITHUB_REF_NAME}"
+          V="${TAG#v}"
+          BASE="https://github.com/${{ github.repository }}/releases/download/${TAG}"
           git fetch origin main && git checkout -f main
           cat > release.json <<JSON
           {
@@ -43,5 +47,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add release.json
-          git commit -m "Release ${GITHUB_REF_NAME}" || echo "no change"
+          git commit -m "Release ${TAG}" || echo "no change"
           git push origin main

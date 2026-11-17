@@ -17,3 +17,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
           bash scripts/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e1-module
+          path: dist/e1-module.tar.gz
